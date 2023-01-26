@@ -6,6 +6,7 @@ package rwkvlm
 
 import (
 	"encoding/gob"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -31,11 +32,26 @@ type Model struct {
 }
 
 type Config struct {
-	DModel              int
-	NumHiddenLayers     int
-	RescaleLayer        int
-	VocabSize           int
-	EmbeddingsStoreName string
+	DModel              int    `json:"d_model"`
+	NumHiddenLayers     int    `json:"num_hidden_layers"`
+	RescaleLayer        int    `json:"rescale_layer"`
+	VocabSize           int    `json:"vocab_size"`
+	EmbeddingsStoreName string `json:"embeddings_store_name"`
+}
+
+func LoadConfig(filePath string) (Config, error) {
+	file, err := os.Open(filePath)
+	if err != nil {
+		return Config{}, err
+	}
+	defer file.Close()
+
+	var config Config
+	jsonDecoder := json.NewDecoder(file)
+	if err := jsonDecoder.Decode(&config); err != nil {
+		return Config{}, err
+	}
+	return config, nil
 }
 
 func init() {
