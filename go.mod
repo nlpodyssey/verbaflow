@@ -4,6 +4,7 @@ go 1.19
 
 require (
 	github.com/nlpodyssey/gopickle v0.1.1-0.20230115185652-9519404270b9
+	github.com/nlpodyssey/gotokenizers v0.2.0
 	github.com/nlpodyssey/rwkv v0.0.0-20230125203703-f0fd13d72982
 	github.com/nlpodyssey/spago v1.0.2-0.20230121202140-6c5e4a9e7a32
 	github.com/nlpodyssey/spago/embeddings/store/diskstore v0.0.0-20220801114813-013d65be77fb
@@ -15,6 +16,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect
 	github.com/dgraph-io/badger/v3 v3.2103.2 // indirect
 	github.com/dgraph-io/ristretto v0.1.0 // indirect
+	github.com/dlclark/regexp2 v1.4.0 // indirect
 	github.com/dustin/go-humanize v1.0.0 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/glog v1.0.0 // indirect
