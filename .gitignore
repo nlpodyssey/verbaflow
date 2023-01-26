@@ -1,0 +1,6 @@
+.DS_Store
+.idea
+.env
+.vscode
+models
+data
