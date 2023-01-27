@@ -55,6 +55,38 @@ This command runs the inference on the specified model.
 
 Please make sure to have the necessary dependencies installed before running the above commands.
 
+## Examples
+
+One of the most interesting features of the LLM is the ability to react based on the prompt.
+
+Running `verbaflow` with the command in inference, enter the following prompts:
+
+### Example 1
+
+Prompt:
+
+```console
+\nQ: Briefly: The Universe is expanding, its constituent galaxies flying apart like pieces of cosmic shrapnel in the aftermath of the Big Bang. Which section of a newspaper would this article likely appear in?\n\nA:
+```
+
+Expected output:
+
+```console
+Science and Technology
+```
+
+### Example 2
+
+```console
+\nQ:Translate the following text from French to English Je suis le père le plus heureux du monde\n\nA:
+```
+
+Expected output:
+
+```console
+I am the happiest father in the world.
+```
+
 ## Dependencies
 
 A list of the main dependencies follows:
