@@ -19,7 +19,37 @@ Clone this repo or get the library:
 go get -u github.com/nlpodyssey/verbaflow
 ```
 
-The library is optimized to run in x86-64 CPUs. If you want to run it on a different architecture, you can use the `GOARCH=amd64` environment variable.
+# Usage
+
+The following commands can be used to build and use VerbaFlow:
+
+```console
+go build -o verbaflow cmd/main.go
+```
+
+This command builds the go program and creates an executable named `verbaflow`.
+
+```console
+./verbaflow download models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+```
+
+This command downloads the model specified (in this case, "nlpodyssey/RWKV-4-Pile-3B-Instruct" under the "models" directory)
+
+```console
+./verbaflow convert models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+```
+
+This command converts the downloaded model to the format used by the program.
+
+```console
+./verbaflow inference models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+```
+
+This command runs the inference on the specified model.
+
+Please make sure to have the necessary dependencies installed before running the above commands.
+
+> The library is optimized to run in x86-64 CPUs. If you want to run it on a different architecture, you can use the `GOARCH=amd64` environment variable.
 
 ## Dependencies
 
@@ -32,7 +62,7 @@ A list of the main dependencies follows:
 
 # Roadmap
 
-- [ ] Download pretrained models from the Hugging Face models hub
+- [x] Download pretrained models from the Hugging Face models hub
 - [ ] Effective "prompts" catalog
 - [ ] Better sampling
 - [ ] Beam search
