@@ -77,6 +77,8 @@ Science and Technology
 
 ### Example 2
 
+Prompt:
+
 ```console
 \nQ:Translate the following text from French to English Je suis le père le plus heureux du monde\n\nA:
 ```
