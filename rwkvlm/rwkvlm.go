@@ -75,7 +75,7 @@ func New[T float.DType](c Config, repo store.Repository) *Model {
 func Load(dir string) (*Model, error) {
 	m, err := loadFromFile(filepath.Join(dir, DefaultOutputFilename))
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
 	return m, nil
 }
