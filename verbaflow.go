@@ -7,6 +7,7 @@ package verbaflow
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 
@@ -35,6 +36,9 @@ func Load(modelDir string) (*VerbaFlow, error) {
 	}
 	model, err := rwkvlm.Load(modelDir)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("error: unable to find the model file or directory '%s'. Please ensure that the model has been successfully downloaded and converted before trying again", modelDir)
+		}
 		return nil, err
 	}
 	embeddingsRepo, err := diskstore.NewRepository(filepath.Join(modelDir, "repo"), diskstore.ReadOnlyMode)
