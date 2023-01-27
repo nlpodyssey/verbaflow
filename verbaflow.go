@@ -7,15 +7,15 @@ package verbaflow
 import (
 	"context"
 	"fmt"
-	"github.com/nlpodyssey/spago/ag"
-	"github.com/nlpodyssey/spago/mat"
-	"github.com/nlpodyssey/spago/mat/rand"
-	"github.com/rs/zerolog/log"
 	"path/filepath"
 
+	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
+	"github.com/nlpodyssey/spago/mat"
+	"github.com/nlpodyssey/spago/mat/rand"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 	"github.com/nlpodyssey/verbaflow/tokenizer"
+	"github.com/rs/zerolog/log"
 )
 
 // VerbaFlow is the core struct of the library.
