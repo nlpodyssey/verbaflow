@@ -10,10 +10,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/verbaflow"
+	"github.com/nlpodyssey/verbaflow/downloader"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -27,13 +29,24 @@ const (
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: go run cmd/main.go [convert model_dir] | [inference model_dir]")
+		fmt.Println("Usage: go run cmd/main.go [download model_dir] | [convert model_dir] | [inference model_dir]")
 		return
 	}
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.DebugLevel)
 
 	switch args[0] {
+	case "download":
+		if len(args) < 2 {
+			fmt.Println("Error: missing model dir argument")
+			return
+		}
+		modelDir := args[1]
+		log.Debug().Msgf("Downloading model in dir: %s", modelDir)
+		if err := download(modelDir); err != nil {
+			log.Fatal().Err(err).Send()
+		}
+		log.Debug().Msg("Done.")
 	case "convert":
 		if len(args) < 2 {
 			fmt.Println("Error: missing model dir argument")
@@ -56,8 +69,16 @@ func main() {
 			log.Fatal().Err(err).Send()
 		}
 	default:
-		fmt.Println("Error: invalid command")
+		fmt.Println("Usage: go run cmd/main.go [download model_dir] | [convert model_dir] | [inference model_dir]")
 	}
+}
+
+func download(path string) error {
+	modelDir, modelName, err := separateModelName(path)
+	if err != nil {
+		log.Fatal().Err(err).Send()
+	}
+	return downloader.Download(modelDir, modelName, false, "")
 }
 
 func convert(modelDir string) error {
@@ -122,6 +143,19 @@ func forEachInput(r io.Reader, callback func(text string) error) (err error) {
 		}
 	}
 	return err
+}
+
+// separateModelName separate the models directory from the model name, which format is "organization/model"
+func separateModelName(path string) (string, string, error) {
+	dirs := strings.Split(strings.TrimSuffix(path, "/"), "/")
+	if len(dirs) < 3 {
+		return "", "", fmt.Errorf("path must have at least three levels of directories")
+	}
+	lastDir := dirs[len(dirs)-1]
+	secondLastDir := dirs[len(dirs)-2]
+
+	pathExceptLastTwo := strings.Join(dirs[:len(dirs)-2], "/")
+	return pathExceptLastTwo, filepath.Join(secondLastDir, lastDir), nil
 }
 
 func init() {
