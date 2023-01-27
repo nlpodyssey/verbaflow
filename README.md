@@ -5,7 +5,7 @@ Built on the robust RWKV RNN, this model is optimized for efficient performance 
 
 With the ability to utilize pretrained models on the [Pile](https://arxiv.org/abs/2101.00027) dataset, VerbaFlow performs comparably to GPT-like Transformer models in predicting the next token, as well as in other tasks such as sentiment analysis, question answering, and general conversation. 
 
-This package is a Go port of the original Python [RWKV-LN](https://github.com/BlinkDL/RWKV-LM) by PENG Bo. 
+This package is a Go port of the original Python [RWKV-LN](https://github.com/BlinkDL/RWKV-LM) by PENG Bo ([BlinkDL](https://github.com/BlinkDL) on GitHub). 
 
 # Installation
 
@@ -20,6 +20,12 @@ go get -u github.com/nlpodyssey/verbaflow
 ```
 
 # Usage
+
+To utilize VerbaFlow to its full potential, we recommend using the pre-trained model `RWKV-4-Pile-3B-Instruct`, available on the [Hugging Face Hub](https://huggingface.co/nlpodyssey/RWKV-4-Pile-3B-Instruct).
+This model has been fine-tuned using the [Pile](https://huggingface.co/datasets/the_pile) dataset and has been specially designed to understand and execute human instructions, as fine-tuned on the [xP3](https://huggingface.co/datasets/bigscience/xP3all) dataset. 
+The original `RWKV-4-Pile-3B-Instruct-test1-20230124` model, from which this model is derived, was trained by PENG Bo and can be accessed [here](https://huggingface.co/BlinkDL/rwkv-4-pile-3b).
+
+> The library is optimized to run in x86-64 CPUs. If you want to run it on a different architecture, you can use the `GOARCH=amd64` environment variable.
 
 The following commands can be used to build and use VerbaFlow:
 
@@ -48,8 +54,6 @@ This command converts the downloaded model to the format used by the program.
 This command runs the inference on the specified model.
 
 Please make sure to have the necessary dependencies installed before running the above commands.
-
-> The library is optimized to run in x86-64 CPUs. If you want to run it on a different architecture, you can use the `GOARCH=amd64` environment variable.
 
 ## Dependencies
 
