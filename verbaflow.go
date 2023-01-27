@@ -97,7 +97,7 @@ loop:
 			if nextToken == "<|endoftext|>" {
 				break loop // stop generating
 			}
-			if nextToken == "\n" && stopOnNewLine {
+			if nextToken == "\n" && len(generated) > 1 && stopOnNewLine {
 				break loop // stop generating
 			}
 			out <- nextToken
