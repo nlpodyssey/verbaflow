@@ -129,15 +129,13 @@ func ConvertPickledModelToRWKVLM[T float.DType](config *ConverterConfig) error {
 		}
 	}
 
-	fmt.Printf("Serializing model to \"%s\"... ", outputFilename)
+	log.Debug().Msgf("Serializing model to \"%s\"... ", outputFilename)
 	runtime.GC()
 	err = Dump(model, outputFilename)
 	if err != nil {
 		return err
 	}
 	runtime.GC()
-	fmt.Println("Done.")
-
 	return nil
 }
 
