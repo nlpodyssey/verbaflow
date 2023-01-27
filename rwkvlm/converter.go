@@ -53,7 +53,7 @@ func ConvertPickledModelToRWKVLM[T float.DType](config *ConverterConfig) error {
 	outputFilename := filepath.Join(config.ModelDir, config.GoModelFilename)
 
 	if info, err := os.Stat(outputFilename); !config.OverwriteIfExist && err == nil && !info.IsDir() {
-		log.Info().Str("model", outputFilename).Msg("Model file already exists, skipping conversion")
+		log.Debug().Str("model", outputFilename).Msg("Model file already exists, skipping conversion")
 		return nil
 	}
 
