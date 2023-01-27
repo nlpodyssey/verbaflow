@@ -7,7 +7,6 @@ package rwkvlm
 import (
 	"encoding/gob"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 
@@ -73,18 +72,10 @@ func New[T float.DType](c Config, repo store.Repository) *Model {
 }
 
 // Load loads a pre-trained model from the given path.
-func Load(dir string, filename string) (*Model, error) {
-	m, err := loadFromFile(filepath.Join(dir, filename))
+func Load(dir string) (*Model, error) {
+	m, err := loadFromFile(filepath.Join(dir, DefaultOutputFilename))
 	if err != nil {
 		panic(err)
-	}
-	embeddingsRepo, err := diskstore.NewRepository(filepath.Join(dir, "repo"), diskstore.ReadOnlyMode)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load embeddings repository: %w", err)
-	}
-	err = m.applyEmbeddings(embeddingsRepo)
-	if err != nil {
-		return nil, fmt.Errorf("failed to apply embeddings: %w", err)
 	}
 	return m, nil
 }
@@ -107,8 +98,8 @@ func Dump(obj *Model, filename string) error {
 	return nil
 }
 
-// applyEmbeddings sets the embeddings of the model.
-func (m *Model) applyEmbeddings(repo *diskstore.Repository) (err error) {
+// ApplyEmbeddings sets the embeddings of the model.
+func (m *Model) ApplyEmbeddings(repo *diskstore.Repository) (err error) {
 	nn.Apply(m, func(model nn.Model, name string) {
 		switch em := model.(type) {
 		case *embeddings.Model[[]byte], *embeddings.Model[int], *embeddings.Model[string]:
