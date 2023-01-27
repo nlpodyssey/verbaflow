@@ -8,7 +8,9 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"runtime"
 
+	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
 	"github.com/nlpodyssey/spago/mat"
@@ -61,6 +63,12 @@ func (v *VerbaFlow) Close() error {
 func (v *VerbaFlow) Generate(ctx context.Context, prompt string, maxTokens int, stopOnNewLine bool, out chan string) error {
 	defer close(out)
 
+	var nodesToRelease []ag.Node
+	defer func() {
+		ag.ReleaseGraph(nodesToRelease...)
+		runtime.GC()
+	}()
+
 	log.Trace().Msgf("Tokenizing prompt: %s", prompt)
 	tokenized, err := v.Tokenizer.Tokenize(prompt)
 	if err != nil {
@@ -71,6 +79,9 @@ func (v *VerbaFlow) Generate(ctx context.Context, prompt string, maxTokens int, 
 	log.Debug().Msg("Encoding prompt...")
 	x, s := v.Model.Encode(tokenized, nil, true)
 	x.Value() // wait for the computation to complete
+
+	nodesToRelease = append(nodesToRelease, x)
+	nodesToRelease = append(nodesToRelease, getStateNodes(s)...)
 
 	log.Debug().Msg("Generating text")
 
@@ -84,8 +95,10 @@ loop:
 		default:
 			if i > 0 {
 				x, s = v.Model.Encode(generated[len(generated)-1:], s, false)
+				nodesToRelease = append(nodesToRelease, x)
+				nodesToRelease = append(nodesToRelease, getStateNodes(s)...)
 			}
-			nextTokenID, err := v.predictNext(x, false)
+			nextTokenID, err := v.predictNext(v.Model.Predict(x), false)
 			if err != nil {
 				return err
 			}
@@ -107,8 +120,15 @@ loop:
 	return nil
 }
 
-func (v *VerbaFlow) predictNext(x ag.Node, sample bool) (int, error) {
-	logits := v.Model.Predict(x)
+func getStateNodes(s rwkv.State) []ag.Node {
+	var nodes []ag.Node
+	for _, layer := range s {
+		nodes = append(nodes, layer.FfnXX, layer.AttXX, layer.AttAA, layer.AttBB, layer.AttPP)
+	}
+	return nodes
+}
+
+func (v *VerbaFlow) predictNext(logits ag.Node, sample bool) (int, error) {
 	prob := logits.Value().Softmax()
 	if sample {
 		samples, err := sampleProbMultinomial(prob, 1)
