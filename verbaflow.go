@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"unicode"
 
 	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/ag"
@@ -73,63 +74,91 @@ func (v *VerbaFlow) Generate(ctx context.Context, prompt string, maxTokens int, 
 		runtime.GC()
 	}()
 
-	log.Trace().Msgf("Tokenizing prompt: %s", prompt)
-	tokenized, err := v.Tokenizer.Tokenize(prompt)
+	tokenized, err := v.tokenizePrompt(prompt)
 	if err != nil {
 		return err
 	}
-	log.Debug().Msgf("Token IDs: %v", tokenized)
 
-	log.Debug().Msg("Encoding prompt...")
-	x, s := v.Model.Encode(tokenized, nil, true)
-	x.Value() // wait for the computation to complete
-
-	nodesToRelease = append(nodesToRelease, x)
-	nodesToRelease = append(nodesToRelease, getStateNodes(s)...)
+	x, s, err := v.encodePrompt(tokenized)
+	if err != nil {
+		return err
+	}
+	nodesToRelease = append(nodesToRelease, extractNodesToRelease(x, s)...)
 
 	log.Debug().Msg("Generating text")
 
-	var generated []int
-
+	lastGeneratedTokenID := -1
+	canPrint := false
 loop:
-	for i := 0; i < maxTokens; i++ {
+	for i := 0; ; i++ {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			if i > 0 {
-				x, s = v.Model.Encode(generated[len(generated)-1:], s, false)
-				nodesToRelease = append(nodesToRelease, x)
-				nodesToRelease = append(nodesToRelease, getStateNodes(s)...)
-			}
-			nextTokenID, err := v.predictNext(v.Model.Predict(x), false)
+			lastGeneratedTokenID, err = v.predictNext(v.Model.Predict(x), false)
 			if err != nil {
 				return err
 			}
-			generated = append(generated, nextTokenID)
-			nextToken, err := v.Tokenizer.ReconstructText([]int{nextTokenID})
+			nextToken, err := v.Tokenizer.ReconstructText([]int{lastGeneratedTokenID})
 			if err != nil {
 				return fmt.Errorf("failed to reconstruct text: %v", err)
 			}
-			if nextToken == "<|endoftext|>" {
+			if !canPrint && containsPrintableChar(nextToken) {
+				canPrint = true
+			}
+			if isDone(nextToken, stopOnNewLine, canPrint) {
+				break loop
+			}
+			if canPrint {
+				out <- nextToken
+			}
+			if i >= maxTokens {
 				break loop // stop generating
 			}
-			if nextToken == "\n" && len(generated) > 1 && stopOnNewLine {
-				break loop // stop generating
-			}
-			out <- nextToken
+			x, s = v.Model.Encode([]int{lastGeneratedTokenID}, s, false)
+			nodesToRelease = append(nodesToRelease, extractNodesToRelease(x, s)...)
 		}
 	}
 
 	return nil
 }
 
-func getStateNodes(s rwkv.State) []ag.Node {
-	var nodes []ag.Node
+func containsPrintableChar(s string) bool {
+	for _, r := range s {
+		if unicode.IsPrint(r) {
+			return true
+		}
+	}
+	return false
+}
+
+func isDone(nextToken string, stopOnNewLine bool, canPrint bool) bool {
+	return nextToken == "<|endoftext|>" || (nextToken == "\n" && canPrint && stopOnNewLine)
+}
+
+func extractNodesToRelease(x ag.Node, s rwkv.State) []ag.Node {
+	nodes := []ag.Node{x}
 	for _, layer := range s {
 		nodes = append(nodes, layer.FfnXX, layer.AttXX, layer.AttAA, layer.AttBB, layer.AttPP)
 	}
 	return nodes
+}
+
+func (v *VerbaFlow) tokenizePrompt(prompt string) ([]int, error) {
+	log.Trace().Msgf("Tokenizing prompt: %s", prompt)
+	tokenized, err := v.Tokenizer.Tokenize(prompt)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug().Msgf("Token IDs: %v", tokenized)
+	return tokenized, nil
+}
+
+func (v *VerbaFlow) encodePrompt(tokenized []int) (ag.Node, rwkv.State, error) {
+	log.Debug().Msg("Encoding prompt...")
+	x, s := v.Model.Encode(tokenized, nil, true)
+	x.Value() // wait for the computation to complete
+	return x, s, nil
 }
 
 func (v *VerbaFlow) predictNext(logits ag.Node, sample bool) (int, error) {
