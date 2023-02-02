@@ -97,13 +97,18 @@ func inference(modelDir string) error {
 
 	opts := decoder.DecodingOptions{
 		MinLen:       0,
-		MaxLen:       333,
+		MaxLen:       200,
 		EndTokenID:   0,
 		Temp:         1,
 		TopP:         0.8,
-		TopK:         120,
+		TopK:         10,
 		UseSampling:  true,
 		EndThreshold: 1.0,
+		StopSequencesIDs: [][]int{
+			{187, 23433, 27},    // \nQuestion:
+			{187, 50, 708, 329}, // \nQ & A:
+			{187, 50, 27},       // \nQ:
+		},
 	}
 	fn := func(text string) error {
 		start := time.Now()
