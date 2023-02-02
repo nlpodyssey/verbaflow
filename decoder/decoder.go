@@ -152,7 +152,6 @@ func (d *Decoder) checkStopConditions(sequence []int) bool {
 		return true
 	}
 	if len(sequence) >= d.opts.MinLen && hasStopSequence(sequence, d.opts.StopSequencesIDs) {
-		log.Trace().Msgf("Reached stop sequence (%v)", d.opts.StopSequencesIDs)
 		return true
 	}
 	return false
@@ -163,8 +162,9 @@ func hasStopSequence(sequence []int, stopSequences [][]int) bool {
 		if len(sequence) < len(stopSeq) {
 			continue
 		}
+
 		if reflect.DeepEqual(stopSeq, sequence[len(sequence)-len(stopSeq):]) {
-			log.Trace().Msgf("Stopping generation because the stop sequence '%q' was found", stopSeq)
+			log.Trace().Msgf("Reached stop sequence %v", stopSeq)
 			return true
 		}
 	}
