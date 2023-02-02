@@ -5,6 +5,7 @@
 package rwkvlm
 
 import (
+	"context"
 	"encoding/gob"
 	"encoding/json"
 	"os"
@@ -19,6 +20,7 @@ import (
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/spago/nn"
 	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
+	"github.com/rs/zerolog/log"
 )
 
 type Model struct {
@@ -114,13 +116,19 @@ func (m *Model) ApplyEmbeddings(repo *diskstore.Repository) (err error) {
 }
 
 // Encode returns the encoding of the given input considering the last state.
-func (m *Model) Encode(context []int, s rwkv.State, encodeFullSequence bool) (ag.Node, rwkv.State) {
+func (m *Model) Encode(ctx context.Context, context []int, s rwkv.State, encodeFullSequence bool) (ag.Node, rwkv.State) {
 	if encodeFullSequence {
 		// transform the context into a sequence of embeddings
 		encoded := m.Embeddings.Encode(context)
 		var x ag.Node
 		for _, e := range encoded {
-			x, s = m.Encoder.Forward(e, s)
+			select {
+			case <-ctx.Done():
+				log.Debug().Msgf("context cancelled: %v", ctx.Err())
+				return nil, s
+			default:
+				x, s = m.Encoder.Forward(e, s)
+			}
 		}
 		return x, s
 	}
