@@ -61,8 +61,6 @@ func New(m *rwkvlm.Model, opts DecodingOptions) *Decoder {
 	}
 }
 
-type TokenSequence = []int
-
 type Result struct {
 	// Sequence is a list of generated tokens ids.
 	Sequence []int
