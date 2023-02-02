@@ -154,6 +154,7 @@ func (d *Decoder) checkStopConditions(sequence []int) bool {
 		return true
 	}
 	if len(sequence) >= d.opts.MinLen && hasStopSequence(sequence, d.opts.StopSequencesIDs) {
+		log.Trace().Msgf("Reached stop sequence (%v)", d.opts.StopSequencesIDs)
 		return true
 	}
 	return false
