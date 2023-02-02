@@ -80,7 +80,7 @@ func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, opts decoder.D
 	if err != nil {
 		return "", err
 	}
-	log.Trace().Msgf("Generated token IDs: %v", decoderOutput)
+	log.Trace().Msgf("[%.2f] Generated token IDs: %v", decoderOutput.Score, decoderOutput.Sequence)
 
 	log.Trace().Msgf("Reconstructing text...")
 	generated, err := vf.Tokenizer.ReconstructText(decoderOutput.Sequence)

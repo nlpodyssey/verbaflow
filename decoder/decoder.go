@@ -66,8 +66,8 @@ type TokenSequence = []int
 type Result struct {
 	// Sequence is a list of generated tokens ids.
 	Sequence []int
-	// Scores is the score of the generated sequence.
-	Scores float64
+	// Score is the sum of the negative log probabilities of the generated tokens.
+	Score float64
 }
 
 func (d *Decoder) Decode(ctx context.Context, input encoder.Result) (*Result, error) {
@@ -81,7 +81,7 @@ func (d *Decoder) Decode(ctx context.Context, input encoder.Result) (*Result, er
 	x, s := input.HiddenRepresentation, input.State
 
 	var sequence []int
-	var scores float64
+	var sumNegLogProbs float64
 
 Loop:
 	for i := 0; ; i++ {
@@ -103,7 +103,7 @@ Loop:
 				return nil, err
 			}
 			sequence = append(sequence, selectedOutput)
-			scores += selectedOutputScore
+			sumNegLogProbs += -math.Log(selectedOutputScore)
 
 			if stopGeneration := d.checkStopConditions(sequence); stopGeneration {
 				break Loop
@@ -119,7 +119,7 @@ Loop:
 
 	return &Result{
 		Sequence: sequence,
-		Scores:   scores,
+		Score:    sumNegLogProbs,
 	}, nil
 }
 
