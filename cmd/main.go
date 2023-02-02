@@ -10,20 +10,18 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/verbaflow"
+	"github.com/nlpodyssey/verbaflow/decoder"
 	"github.com/nlpodyssey/verbaflow/downloader"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-)
-
-const (
-	maxTokens     = 100
-	stopOnNewLine = true
 )
 
 func main() {
@@ -32,8 +30,7 @@ func main() {
 		fmt.Println("Usage: go run cmd/main.go [download model_dir] | [convert model_dir] | [inference model_dir]")
 		return
 	}
-
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.DebugLevel)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.TraceLevel)
 
 	switch args[0] {
 	case "download":
@@ -98,21 +95,29 @@ func inference(modelDir string) error {
 
 	log.Debug().Msgf("Ready.")
 
+	opts := decoder.DecodingOptions{
+		MinLen:       0,
+		MaxLen:       333,
+		EndTokenID:   0,
+		Temp:         1,
+		TopP:         0.8,
+		TopK:         120,
+		UseSampling:  true,
+		EndThreshold: 1.0,
+	}
 	fn := func(text string) error {
-		genCh := make(chan string) // the channel is used to receive the text as the generation progresses
+		start := time.Now()
 
-		go func() {
-			err2 := vf.Generate(context.Background(), text, maxTokens, stopOnNewLine, genCh)
-			if err2 != nil {
-				log.Fatal().Err(err2).Send()
-			}
-		}()
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+		defer stop()
 
-		// print the stream of generated tokens
-		for token := range genCh {
-			fmt.Print(token)
+		generated, err2 := vf.Generate(ctx, text, opts)
+		if err2 != nil {
+			log.Fatal().Err(err2).Send()
 		}
-		fmt.Println()
+
+		fmt.Println(time.Since(start).Seconds())
+		fmt.Println(strings.TrimSpace(generated))
 		return nil
 	}
 
@@ -127,19 +132,17 @@ func inference(modelDir string) error {
 // forEachInput calls the given callback function for each line of input.
 func forEachInput(r io.Reader, callback func(text string) error) (err error) {
 	scanner := bufio.NewScanner(r)
+Loop:
 	for {
 		fmt.Print("> ")
 		scanner.Scan()
 		text := scanner.Text()
-		switch text {
-		case "":
+		if text == "" {
 			continue
-		case "(quit)":
-			break
 		}
 		text = strings.Replace(text, `\n`, "\n", -1)
 		if err = callback(text); err != nil {
-			break
+			break Loop
 		}
 	}
 	return err

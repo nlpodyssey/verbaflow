@@ -102,7 +102,7 @@ A list of the main dependencies follows:
 
 - [x] Download pretrained models from the Hugging Face models hub
 - [ ] Effective "prompts" catalog
-- [ ] Better sampling
+- [x] Better sampling
 - [ ] Beam search
 - [ ] Tokenizer
 - [ ] Unit tests
