@@ -27,10 +27,23 @@ import (
 func main() {
 	args := os.Args[1:]
 	if len(args) == 0 {
-		fmt.Println("Usage: go run cmd/main.go [download model_dir] | [convert model_dir] | [inference model_dir]")
+		fmt.Println("Usage: verbaflow [download model_dir] | [convert model_dir] | [inference model_dir] [debug_level]")
 		return
 	}
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(zerolog.TraceLevel)
+
+	var debugLevel zerolog.Level
+	if len(args) > 2 {
+		debugLevelArg := args[2]
+		var err error
+		debugLevel, err = zerolog.ParseLevel(debugLevelArg)
+		if err != nil {
+			fmt.Printf("Error: invalid debug level argument: %s\n", debugLevelArg)
+			return
+		}
+	} else {
+		debugLevel = zerolog.TraceLevel
+	}
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr}).Level(debugLevel)
 
 	switch args[0] {
 	case "download":
@@ -66,7 +79,7 @@ func main() {
 			log.Fatal().Err(err).Send()
 		}
 	default:
-		fmt.Println("Usage: go run cmd/main.go [download model_dir] | [convert model_dir] | [inference model_dir]")
+		fmt.Println("Usage: verbaflow [download model_dir] | [convert model_dir] | [inference model_dir] [debug_level]")
 	}
 }
 
