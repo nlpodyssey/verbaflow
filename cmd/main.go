@@ -92,7 +92,7 @@ func download(path string) error {
 }
 
 func convert(modelDir string) error {
-	return rwkvlm.ConvertPickledModelToRWKVLM[float32](&rwkvlm.ConverterConfig{
+	return rwkvlm.ConvertPickledModelToRWKVLM[float32](rwkvlm.ConverterConfig{
 		ModelDir:         modelDir,
 		OverwriteIfExist: false,
 	})

@@ -6,22 +6,31 @@ package rwkvlm
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
-	"runtime"
+	"strconv"
+	"strings"
 
 	"github.com/nlpodyssey/gopickle/pytorch"
 	"github.com/nlpodyssey/gopickle/types"
+	"github.com/nlpodyssey/rwkv"
+	"github.com/nlpodyssey/spago/embeddings"
+	"github.com/nlpodyssey/spago/embeddings/store"
 	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
-	"github.com/rs/zerolog"
+	"github.com/nlpodyssey/spago/nn"
+	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
 	"github.com/rs/zerolog/log"
 )
 
 const (
-	DefaultPyModelFilename = "pytorch_model.pt"
-	DefaultOutputFilename  = "spago_model.bin"
+	DefaultPyModelFilename   = "pytorch_model.pt"
+	DefaultOutputFilename    = "spago_model.bin"
+	DefaultEmbeddingRepoPath = "spago_embedding"
+
+	DefaultLayerNormEps = 1e-5
 )
 
 type ConverterConfig struct {
@@ -31,215 +40,594 @@ type ConverterConfig struct {
 	PyModelFilename string
 	// The path to the output model file (default "spago_model.pt")
 	GoModelFilename string
+	// The path to the embedding repository (default "spago_embedding")
+	EmbeddingRepoPath string
 	// If true, overwrite the model file if it already exists (default "false")
 	OverwriteIfExist bool
 }
 
-type mappingParam struct {
-	value   mat.Matrix
-	matched bool
-}
-
 // ConvertPickledModelToRWKVLM converts a PyTorch model to a RWKVLM model.
 // It expects a configuration file "config.json" in the same directory as the model file containing the model configuration.
-func ConvertPickledModelToRWKVLM[T float.DType](config *ConverterConfig) error {
+func ConvertPickledModelToRWKVLM[T float.DType](config ConverterConfig) error {
 	if config.PyModelFilename == "" {
 		config.PyModelFilename = DefaultPyModelFilename
 	}
 	if config.GoModelFilename == "" {
 		config.GoModelFilename = DefaultOutputFilename
 	}
+	if config.EmbeddingRepoPath == "" {
+		config.EmbeddingRepoPath = DefaultEmbeddingRepoPath
+	}
 
 	outputFilename := filepath.Join(config.ModelDir, config.GoModelFilename)
 
-	if info, err := os.Stat(outputFilename); !config.OverwriteIfExist && err == nil && !info.IsDir() {
+	if !config.OverwriteIfExist && fileExists(outputFilename) {
 		log.Debug().Str("model", outputFilename).Msg("Model file already exists, skipping conversion")
 		return nil
 	}
 
-	modelConfig, err := LoadConfig(filepath.Join(config.ModelDir, "config.json"))
+	configFilename := filepath.Join(config.ModelDir, "config.json")
+	modelConfig, err := LoadConfig(configFilename)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to load config file %q: %w", configFilename, err)
 	}
 
-	pyParams, err := extractPyTorchModelParamsFromPickleFile[T](filepath.Join(config.ModelDir, config.PyModelFilename))
+	inFilename := filepath.Join(config.ModelDir, config.PyModelFilename)
+	embRepoPath := filepath.Join(config.ModelDir, config.EmbeddingRepoPath)
+	conv := newConverter[T](modelConfig, inFilename, outputFilename, embRepoPath)
+	err = conv.run()
 	if err != nil {
-		return err
+		return fmt.Errorf("model conversion failed: %w", err)
 	}
-
-	repo, err := diskstore.NewRepository(filepath.Join(config.ModelDir, "repo"), diskstore.ReadWriteMode)
-	if err != nil {
-		panic(err)
-	}
-	defer func() {
-		err = repo.Close()
-		if err != nil {
-			panic(err)
-		}
-	}()
-	if err := repo.DropAll(); err != nil {
-		panic(err)
-	}
-
-	model := New[T](modelConfig, repo)
-	params := mapPyTorchParamsToRWKVLM(model)
-
-	mapping := make(map[string]*mappingParam)
-	for k, v := range params {
-		mapping[k] = &mappingParam{value: v, matched: false}
-	}
-
-	{
-		// Embeddings
-		source := pyParams["emb.weight"]
-		size := model.Config.DModel
-		for i := 0; i < modelConfig.VocabSize; i++ {
-			item, _ := model.Embeddings.Tokens.Embedding(i)
-			item.ReplaceValue(mat.NewVecDense[T](source[i*size : (i+1)*size]))
-		}
-		runtime.GC()
-	}
-
-	// All the other parameters
-	for name, value := range pyParams {
-		param, ok := mapping[name]
-		if !ok {
-			continue
-		}
-		if param.value.Size() != len(value) {
-			return fmt.Errorf("Error setting %s: dim mismatch", name)
-		}
-		mat.SetData[T](param.value, value)
-		param.matched = true
-	}
-
-	if zerolog.GlobalLevel() <= zerolog.DebugLevel {
-		for key, value := range mapping {
-			if !value.matched {
-				log.Debug().Str("parameter", key).Msg("Parameter not initialized")
-			}
-		}
-		for name := range pyParams {
-			if name == "emb.weight" {
-				continue // skip embeddings
-			}
-			if _, ok := mapping[name]; !ok {
-				log.Debug().Str("parameter", name).Msg("Parameter not mapped")
-			}
-		}
-	}
-
-	log.Debug().Msgf("Serializing model to \"%s\"... ", outputFilename)
-	runtime.GC()
-	err = Dump(model, outputFilename)
-	if err != nil {
-		return err
-	}
-	runtime.GC()
 	return nil
 }
 
-func mapPyTorchParamsToRWKVLM(m *Model) map[string]mat.Matrix {
-	params := make(map[string]mat.Matrix)
-
-	// RWKV parameters
-	for i := 0; i < m.Config.NumHiddenLayers; i++ {
-		layer := m.Encoder.Layers[i]
-		prefix := fmt.Sprintf("blocks.%d", i)
-
-		if i == 0 {
-			params[fmt.Sprintf("%s.ln0.weight", prefix)] = layer.LN0.W.Value()
-			params[fmt.Sprintf("%s.ln0.bias", prefix)] = layer.LN0.B.Value()
-		}
-
-		params[fmt.Sprintf("%s.ln1.weight", prefix)] = layer.LN1.W.Value()
-		params[fmt.Sprintf("%s.ln1.bias", prefix)] = layer.LN1.B.Value()
-		params[fmt.Sprintf("%s.ln2.weight", prefix)] = layer.LN2.W.Value()
-		params[fmt.Sprintf("%s.ln2.bias", prefix)] = layer.LN2.B.Value()
-
-		params[fmt.Sprintf("%s.att.time_decay", prefix)] = layer.TimeMix.TimeDecay.Value()
-		params[fmt.Sprintf("%s.att.time_first", prefix)] = layer.TimeMix.TimeFirst.Value()
-		params[fmt.Sprintf("%s.att.time_mix_k", prefix)] = layer.TimeMix.TimeMixK.Value()
-		params[fmt.Sprintf("%s.att.time_mix_v", prefix)] = layer.TimeMix.TimeMixV.Value()
-		params[fmt.Sprintf("%s.att.time_mix_r", prefix)] = layer.TimeMix.TimeMixR.Value()
-		params[fmt.Sprintf("%s.att.key.weight", prefix)] = layer.TimeMix.Key.Value()
-		params[fmt.Sprintf("%s.att.value.weight", prefix)] = layer.TimeMix.Value.Value()
-		params[fmt.Sprintf("%s.att.receptance.weight", prefix)] = layer.TimeMix.Receptance.Value()
-		params[fmt.Sprintf("%s.att.output.weight", prefix)] = layer.TimeMix.Output.Value()
-
-		params[fmt.Sprintf("%s.ffn.time_mix_k", prefix)] = layer.ChanMix.TimeMixK.Value()
-		params[fmt.Sprintf("%s.ffn.time_mix_r", prefix)] = layer.ChanMix.TimeMixR.Value()
-		params[fmt.Sprintf("%s.ffn.key.weight", prefix)] = layer.ChanMix.Key.Value()
-		params[fmt.Sprintf("%s.ffn.receptance.weight", prefix)] = layer.ChanMix.Receptance.Value()
-		params[fmt.Sprintf("%s.ffn.value.weight", prefix)] = layer.ChanMix.Value.Value()
-	}
-
-	// Decoder parameters
-	params["ln_out.weight"] = m.LN.W.Value()
-	params["ln_out.bias"] = m.LN.B.Value()
-	params["head.weight"] = m.Linear.Value()
-
-	return params
+func fileExists(name string) bool {
+	info, err := os.Stat(name)
+	return err == nil && !info.IsDir()
 }
 
-// extractPyTorchModelParamsFromPickleFile returns the model parameters.
-func extractPyTorchModelParamsFromPickleFile[T float.DType](filename string) (map[string][]T, error) {
-	result, err := pytorch.Load(filename)
+type converter[T float.DType] struct {
+	model       *Model
+	inFilename  string
+	outFilename string
+	embRepoPath string
+	params      paramsMap
+}
+
+func newConverter[T float.DType](conf Config, inFilename, outFilename, embRepoPath string) *converter[T] {
+	return &converter[T]{
+		model:       &Model{Config: conf},
+		inFilename:  inFilename,
+		outFilename: outFilename,
+		embRepoPath: embRepoPath,
+	}
+}
+
+func (c *converter[T]) run() error {
+	funcs := []func() error{
+		c.loadTorchModelParams,
+		c.convEmbeddings,
+		c.convLinear,
+		c.convRootLayerNorm,
+		c.convBlocks,
+		c.dumpModel,
+	}
+	for _, fn := range funcs {
+		if err := fn(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (c *converter[T]) dumpModel() (err error) {
+	f, err := os.Create(c.outFilename)
+	if err != nil {
+		return fmt.Errorf("failed to open model dump file %q for writing: %w", c.outFilename, err)
+	}
+	defer func() {
+		if e := f.Close(); e != nil && err == nil {
+			err = fmt.Errorf("failed to close model dump file %q: %w", c.outFilename, e)
+		}
+	}()
+	if err = gobEncode(c.model, f); err != nil {
+		return fmt.Errorf("failed to encode model dump: %w", err)
+	}
+	return nil
+}
+
+func (c *converter[T]) convRootLayerNorm() (err error) {
+	c.model.LN, err = c.convLayerNorm("ln_out", c.params)
+	if err != nil {
+		err = fmt.Errorf("failed to convert layer-norm: %w", err)
+	}
+	return
+}
+
+func (c *converter[T]) convEmbeddings() error {
+	embWeight, err := c.params.fetch("emb.weight")
+	if err != nil {
+		return err
+	}
+
+	vecs, err := c.tensorToVectors(embWeight)
+	if err != nil {
+		return fmt.Errorf("failed to convert embeddings: %w", err)
+	}
+
+	if vs := c.model.Config.VocabSize; vs == 0 {
+		c.model.Config.VocabSize = len(vecs)
+	} else if len(vecs) != vs {
+		return fmt.Errorf("expected embedding vectors to match vocabulary size %d, actual %d", vs, len(vecs))
+	}
+
+	if dm := c.model.Config.DModel; dm == 0 {
+		c.model.Config.DModel = vecs[0].Size()
+	} else if dm != vecs[0].Size() {
+		return fmt.Errorf("expected embedding vectors to match configured size %d, actual %d", dm, vecs[0].Size())
+	}
+
+	return c.withEmbRepo(func(repo store.Repository) {
+		embs := c.newEmbeddings(repo)
+		for i, vec := range vecs {
+			embs.Tokens.EmbeddingFast(i).ReplaceValue(vec)
+		}
+		c.model.Embeddings = embs
+	})
+}
+
+func (c *converter[T]) newEmbeddings(repo store.Repository) *Embeddings {
+	return NewEmbeddings[T](embeddings.Config{
+		Size:      c.model.Config.DModel,
+		StoreName: c.model.Config.EmbeddingsStoreName,
+		Trainable: false,
+	}, repo)
+}
+
+func (c *converter[T]) withEmbRepo(fn func(store.Repository)) (err error) {
+	repo, err := diskstore.NewRepository(c.embRepoPath, diskstore.ReadWriteMode)
+	if err != nil {
+		return fmt.Errorf("failed to open embedding repository: %w", err)
+	}
+	defer func() {
+		if e := repo.Close(); e != nil && err == nil {
+			err = fmt.Errorf("failed to close embedding repository: %w", e)
+		}
+	}()
+	if err = repo.DropAll(); err != nil {
+		err = fmt.Errorf("failed to drop embedding repository data: %w", err)
+	}
+	fn(repo)
+	return nil
+}
+
+func (c *converter[T]) convLinear() error {
+	headWeight, err := c.params.fetch("head.weight")
+	if err != nil {
+		return err
+	}
+
+	m, err := c.tensorToMatrix(headWeight)
+	if err != nil {
+		return fmt.Errorf("failed to convert head-weight/linear: %w", err)
+	}
+
+	if vs := c.model.Config.VocabSize; m.Rows() != vs {
+		return fmt.Errorf("expected head-weight/linear rows to match vocabulary size %d, actual %d", vs, m.Rows())
+	}
+	if dm := c.model.Config.DModel; m.Columns() != dm {
+		return fmt.Errorf("expected head-weight/linear columns to match DModel %d, actual %d", dm, m.Columns())
+	}
+
+	c.model.Linear = nn.NewParam(m)
+	return nil
+}
+
+func (c *converter[T]) convBlocks() error {
+	allBlocksParams := c.params.fetchPrefixed("blocks.")
+	numBlocks, err := countBlocks(allBlocksParams)
+	if err != nil {
+		return err
+	}
+	if numBlocks == 0 {
+		return fmt.Errorf("no blocks/layers found in parameters")
+	}
+	if hl := c.model.Config.NumHiddenLayers; hl == 0 {
+		c.model.Config.NumHiddenLayers = numBlocks
+	} else if hl != numBlocks {
+		return fmt.Errorf("expected %d blocks/layers, actual %d", hl, numBlocks)
+	}
+
+	conf := rwkv.Config{
+		DModel:       c.model.Config.DModel,
+		NumLayers:    c.model.Config.NumHiddenLayers,
+		RescaleLayer: c.model.Config.RescaleLayer,
+	}
+
+	layers := make([]*rwkv.Layer, numBlocks)
+	for i := range layers {
+		blockParams := allBlocksParams.fetchPrefixed(fmt.Sprintf("%d.", i))
+		layers[i], err = c.convBlock(i, conf, blockParams)
+		if err != nil {
+			return fmt.Errorf("failed to convert block/layer %d: %w", i, err)
+		}
+	}
+
+	c.model.Encoder = &rwkv.Model{
+		Config: conf,
+		Layers: layers,
+	}
+	return nil
+}
+
+func (c *converter[T]) convBlock(id int, conf rwkv.Config, params paramsMap) (_ *rwkv.Layer, err error) {
+	layer := &rwkv.Layer{
+		ID: id,
+	}
+
+	layer.ChanMix, err = c.convChanMix(id, params.fetchPrefixed("ffn."))
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert ffn/channel-mix: %w", err)
+	}
+
+	layer.TimeMix, err = c.convTimeMix(id, conf, params.fetchPrefixed("att."))
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert att/time-mix: %w", err)
+	}
+
+	if id == 0 {
+		layer.LN0, err = c.convLayerNorm("ln0", params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert layer-norm 0: %w", err)
+		}
+	}
+
+	layer.LN1, err = c.convLayerNorm("ln1", params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert layer-norm 1: %w", err)
+	}
+
+	layer.LN2, err = c.convLayerNorm("ln2", params)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert layer-norm 2: %w", err)
+	}
+
+	return layer, nil
+}
+
+func (c *converter[T]) convChanMix(id int, params paramsMap) (*rwkv.ChannelMix, error) {
+	dm := c.model.Config.DModel
+	outScale := math.Pow(2, float64(id/c.model.Config.RescaleLayer))
+
+	key, err := c.fetchParamToMatrix(params, "key.weight", [2]int{dm * 4, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert key weight: %w", err)
+	}
+
+	receptance, err := c.fetchParamToMatrix(params, "receptance.weight", [2]int{dm, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert receptance weight: %w", err)
+	}
+
+	value, err := c.fetchParamToMatrix(params, "value.weight", [2]int{dm, dm * 4})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert value weight: %w", err)
+	}
+	if outScale != 1 {
+		value.ProdScalarInPlace(1 / outScale)
+	}
+
+	tmk, err := c.fetchParamToSqueezedVector(params, "time_mix_k", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-mix-k: %w", err)
+	}
+
+	tmr, err := c.fetchParamToSqueezedVector(params, "time_mix_r", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-mix-r: %w", err)
+	}
+
+	return &rwkv.ChannelMix{
+		Key:        nn.NewParam(key),
+		Value:      nn.NewParam(value),
+		Receptance: nn.NewParam(receptance),
+		TimeMixK:   nn.NewParam(tmk),
+		TimeMixR:   nn.NewParam(tmr),
+	}, nil
+}
+
+func (c *converter[T]) convTimeMix(id int, conf rwkv.Config, params paramsMap) (*rwkv.TimeMix, error) {
+	dm := c.model.Config.DModel
+	outScale := math.Pow(2, float64(id/c.model.Config.RescaleLayer))
+
+	key, err := c.fetchParamToMatrix(params, "key.weight", [2]int{dm, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert key weight: %w", err)
+	}
+
+	receptance, err := c.fetchParamToMatrix(params, "receptance.weight", [2]int{dm, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert receptance weight: %w", err)
+	}
+
+	output, err := c.fetchParamToMatrix(params, "output.weight", [2]int{dm, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert output weight: %w", err)
+	}
+	if outScale != 1 {
+		output.ProdScalarInPlace(1 / outScale)
+	}
+
+	value, err := c.fetchParamToMatrix(params, "value.weight", [2]int{dm, dm})
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert value weight: %w", err)
+	}
+
+	tDecay, err := c.fetchParamToSqueezedVector(params, "time_decay", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-decay: %w", err)
+	}
+	tDecay = tDecay.Exp().ProdScalarInPlace(-1)
+
+	tFirst, err := c.fetchParamToSqueezedVector(params, "time_first", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-first: %w", err)
+	}
+
+	tmk, err := c.fetchParamToSqueezedVector(params, "time_mix_k", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-mix-k: %w", err)
+	}
+
+	tmr, err := c.fetchParamToSqueezedVector(params, "time_mix_r", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-mix-r: %w", err)
+	}
+
+	tmv, err := c.fetchParamToSqueezedVector(params, "time_mix_v", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert time-mix-v: %w", err)
+	}
+
+	return &rwkv.TimeMix{
+		Config:     conf,
+		Key:        nn.NewParam(key),
+		Value:      nn.NewParam(value),
+		Receptance: nn.NewParam(receptance),
+		Output:     nn.NewParam(output),
+		TimeDecay:  nn.NewParam(tDecay),
+		TimeFirst:  nn.NewParam(tFirst),
+		TimeMixK:   nn.NewParam(tmk),
+		TimeMixV:   nn.NewParam(tmv),
+		TimeMixR:   nn.NewParam(tmr),
+	}, nil
+}
+
+func (c *converter[T]) convLayerNorm(name string, params paramsMap) (*layernorm.Model, error) {
+	dm := c.model.Config.DModel
+
+	w, err := c.fetchParamToVector(params, name+".weight", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert layer-norm weight: %w", err)
+	}
+
+	b, err := c.fetchParamToVector(params, name+".bias", dm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert layer-norm bias: %w", err)
+	}
+
+	return &layernorm.Model{
+		W:   nn.NewParam(w),
+		B:   nn.NewParam(b),
+		Eps: nn.Const[T](DefaultLayerNormEps),
+	}, nil
+}
+
+func (c *converter[T]) loadTorchModelParams() error {
+	torchModel, err := pytorch.Load(c.inFilename)
+	if err != nil {
+		return fmt.Errorf("failed to load torch model %q: %w", c.inFilename, err)
+	}
+	c.params, err = makeParamsMap(torchModel)
+	if err != nil {
+		return fmt.Errorf("failed to read model params: %w", err)
+	}
+	return nil
+}
+
+func (c *converter[T]) tensorToVectors(t *pytorch.Tensor) ([]mat.Matrix, error) {
+	if len(t.Size) != 2 {
+		return nil, fmt.Errorf("expected 2 dimensions, actual %d", len(t.Size))
+	}
+
+	data, err := c.tensorData(t)
 	if err != nil {
 		return nil, err
 	}
-	params := make(map[string][]T)
-	fn := func(name string, tensor *pytorch.Tensor) {
-		if _, ok := tensor.Source.(*pytorch.FloatStorage); ok {
-			params[name] = extractTensorValuesAsFloat32Slice[T](tensor)
+
+	rows := t.Size[0]
+	cols := t.Size[1]
+
+	vecs := make([]mat.Matrix, rows)
+	for i := range vecs {
+		d := data[i*cols : (i*cols)+cols]
+		vecs[i] = mat.NewVecDense[T](c.castMatrixData(d))
+	}
+
+	return vecs, nil
+}
+
+func (c *converter[T]) tensorToMatrix(t *pytorch.Tensor) (mat.Matrix, error) {
+	if len(t.Size) != 2 {
+		return nil, fmt.Errorf("expected 2 dimensions, actual %d", len(t.Size))
+	}
+
+	data, err := c.tensorData(t)
+	if err != nil {
+		return nil, err
+	}
+
+	return mat.NewDense[T](t.Size[0], t.Size[1], c.castMatrixData(data)), nil
+}
+
+func (c *converter[T]) tensorToVector(t *pytorch.Tensor) (mat.Matrix, error) {
+	if len(t.Size) != 1 {
+		return nil, fmt.Errorf("expected 1 dimension, actual %d", len(t.Size))
+	}
+
+	data, err := c.tensorData(t)
+	if err != nil {
+		return nil, err
+	}
+
+	return mat.NewVecDense[T](c.castMatrixData(data)), nil
+}
+
+func (c *converter[T]) tensorToSqueezedVector(t *pytorch.Tensor) (mat.Matrix, error) {
+	data, err := c.tensorData(t)
+	if err != nil {
+		return nil, err
+	}
+	return mat.NewVecDense[T](c.castMatrixData(data)), nil
+}
+
+func (c *converter[T]) castMatrixData(d []float32) []T {
+	return float.SliceValueOf[T](float.SliceInterface(d))
+}
+
+func (c *converter[T]) tensorData(t *pytorch.Tensor) ([]float32, error) {
+	st, ok := t.Source.(*pytorch.BFloat16Storage)
+	if !ok {
+		return nil, fmt.Errorf("only BFloat16Storage is supported, actual %T", t.Source)
+	}
+	size := tensorDataSize(t)
+	return st.Data[t.StorageOffset : t.StorageOffset+size], nil
+}
+
+func (c *converter[T]) fetchParamToVector(params paramsMap, name string, expectedSize int) (mat.Matrix, error) {
+	t, err := params.fetch(name)
+	if err != nil {
+		return nil, err
+	}
+	v, err := c.tensorToVector(t)
+	if err != nil {
+		return nil, err
+	}
+	if v.Size() != expectedSize {
+		return nil, fmt.Errorf("expected vector size %d, actual %d", expectedSize, v.Size())
+	}
+	return v, nil
+}
+
+func (c *converter[T]) fetchParamToSqueezedVector(params paramsMap, name string, expectedSize int) (mat.Matrix, error) {
+	t, err := params.fetch(name)
+	if err != nil {
+		return nil, err
+	}
+	v, err := c.tensorToSqueezedVector(t)
+	if err != nil {
+		return nil, err
+	}
+	if v.Size() != expectedSize {
+		return nil, fmt.Errorf("expected squeezed vector size %d, actual %d", expectedSize, v.Size())
+	}
+	return v, nil
+}
+
+func (c *converter[T]) fetchParamToMatrix(params paramsMap, name string, expectedSize [2]int) (mat.Matrix, error) {
+	t, err := params.fetch(name)
+	if err != nil {
+		return nil, err
+	}
+	m, err := c.tensorToMatrix(t)
+	if err != nil {
+		return nil, err
+	}
+	if m.Rows() != expectedSize[0] || m.Columns() != expectedSize[1] {
+		return nil, fmt.Errorf("expected matrix size %dx%d, actual %dx%d",
+			expectedSize[0], expectedSize[1], m.Rows(), m.Columns())
+	}
+	return m, nil
+}
+
+func countBlocks(params paramsMap) (int, error) {
+	max := 0
+	for k := range params {
+		before, _, ok := strings.Cut(k, ".")
+		if !ok {
+			return 0, fmt.Errorf("block/layer parameter names expected to start with number, actual name %q", k)
+		}
+		num, err := strconv.Atoi(before)
+		if err != nil {
+			return 0, fmt.Errorf("block/layer parameter names expected to start with number, actual name %q: %w", k, err)
+		}
+		if num > max {
+			max = num
 		}
 	}
-	switch r := result.(type) {
-	case *types.OrderedDict:
-		yieldOrderedDict(r, fn)
-	case *types.Dict:
-		yieldDict(r, fn)
-	}
-	return params, err
+	return max + 1, nil
 }
 
-func yieldOrderedDict(dict *types.OrderedDict, fn func(name string, tensor *pytorch.Tensor)) {
-	for key, entry := range dict.Map {
-		fn(key.(string), entry.Value.(*pytorch.Tensor))
-	}
-}
-
-func yieldDict(dict *types.Dict, fn func(name string, tensor *pytorch.Tensor)) {
-	for _, entry := range *dict {
-		fn(entry.Key.(string), entry.Value.(*pytorch.Tensor))
-	}
-}
-
-// extractTensorValuesAsFloat32Slice returns the underlying values of a PyTorch tensor as a T slice.
-// It returns the extractTensorValuesAsFloat32Slice using the row-major representation, possibly converting column-major order to row-major order.
-func extractTensorValuesAsFloat32Slice[T float.DType](t *pytorch.Tensor) []T {
-	if len(t.Size) == 0 || len(t.Size) > 2 {
-		panic("gopickleutils: number of sizes not supported")
-	}
+func tensorDataSize(t *pytorch.Tensor) int {
 	size := t.Size[0]
-	if len(t.Size) > 1 {
-		size *= t.Size[1]
+	for _, v := range t.Size[1:] {
+		size *= v
 	}
-	orig := t.Source.(*pytorch.FloatStorage).Data[t.StorageOffset : t.StorageOffset+size]
-	data := make([]T, len(orig))
+	return size
+}
 
-	if len(t.Size) == 1 || t.Size[1] == 1 || t.Size[0] == 1 || t.Stride[1] == 1 {
-		for i, val := range orig {
-			data[i] = T(val)
-		}
-		return data
+func cast[T any](v any) (t T, _ error) {
+	t, ok := v.(T)
+	if !ok {
+		return t, fmt.Errorf("type assertion failed: expected %T, actual %T", t, v)
+	}
+	return
+}
+
+type paramsMap map[string]*pytorch.Tensor
+
+func makeParamsMap(torchModel any) (paramsMap, error) {
+	od, err := cast[*types.OrderedDict](torchModel)
+	if err != nil {
+		return nil, err
 	}
 
-	s0, s1 := t.Size[1], t.Size[0]
-	for i := 0; i < s0; i++ {
-		for j := 0; j < s1; j++ {
-			data[i+j*s0] = T(orig[j+i*s1])
+	params := make(paramsMap, od.Len())
+
+	for k, item := range od.Map {
+		name, err := cast[string](k)
+		if err != nil {
+			return nil, fmt.Errorf("wrong param name type: %w", err)
+		}
+		tensor, err := cast[*pytorch.Tensor](item.Value)
+		if err != nil {
+			return nil, fmt.Errorf("wrong value type for param %q: %w", name, err)
+		}
+		params[name] = tensor
+	}
+
+	return params, nil
+}
+
+// fetchParam gets a value from params by its name, removing the entry
+// from the map.
+func (p paramsMap) fetch(name string) (*pytorch.Tensor, error) {
+	t, ok := p[name]
+	if !ok {
+		return nil, fmt.Errorf("parameter %q not found", name)
+	}
+	delete(p, name)
+	return t, nil
+}
+
+func (p paramsMap) fetchPrefixed(prefix string) paramsMap {
+	out := make(paramsMap, len(p))
+	for k, v := range p {
+		if after, ok := strings.CutPrefix(k, prefix); ok {
+			out[after] = v
+			delete(p, k)
 		}
 	}
-	return data
+	return out
 }

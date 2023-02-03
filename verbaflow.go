@@ -38,7 +38,7 @@ func Load(modelDir string) (*VerbaFlow, error) {
 		}
 		return nil, err
 	}
-	embeddingsRepo, err := diskstore.NewRepository(filepath.Join(modelDir, "repo"), diskstore.ReadOnlyMode)
+	embeddingsRepo, err := diskstore.NewRepository(filepath.Join(modelDir, "spago_embedding"), diskstore.ReadOnlyMode)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load embeddings repository: %w", err)
 	}

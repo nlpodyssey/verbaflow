@@ -26,14 +26,9 @@ func init() {
 }
 
 // NewEmbeddings returns a new embedding module.
-func NewEmbeddings[T float.DType](c Config, repo store.Repository) *Embeddings {
+func NewEmbeddings[T float.DType](c emb.Config, repo store.Repository) *Embeddings {
 	return &Embeddings{
-		Tokens: emb.New[T, int](emb.Config{
-			Size:      c.DModel,
-			StoreName: c.EmbeddingsStoreName,
-			Trainable: false,
-		}, repo),
-		Config: c,
+		Tokens: emb.New[T, int](c, repo),
 	}
 }
 

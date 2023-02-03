@@ -33,10 +33,22 @@ type Model struct {
 }
 
 type Config struct {
-	DModel              int    `json:"d_model"`
-	NumHiddenLayers     int    `json:"num_hidden_layers"`
-	RescaleLayer        int    `json:"rescale_layer"`
+	// DModel primarily corresponds to the embedding size.
+	//
+	// When converting a torch model, it can be left zero, letting the
+	// process deduce the value automatically.
+	DModel int `json:"d_model"`
+	// NumHiddenLayers is the number of hidden layers.
+	//
+	// When converting a torch model, it can be left zero, letting the
+	// process deduce the value automatically.
+	NumHiddenLayers int `json:"num_hidden_layers"`
+	// VocabSize is the vocabulary size.
+	//
+	// When converting a torch model, it can be left zero, letting the
+	// process deduce the value automatically.
 	VocabSize           int    `json:"vocab_size"`
+	RescaleLayer        int    `json:"rescale_layer"`
 	EmbeddingsStoreName string `json:"embeddings_store_name"`
 }
 
@@ -67,9 +79,13 @@ func New[T float.DType](c Config, repo store.Repository) *Model {
 			NumLayers:    c.NumHiddenLayers,
 			RescaleLayer: c.RescaleLayer,
 		}),
-		LN:         layernorm.New[T](c.DModel, 1e-6),
-		Linear:     nn.NewParam(mat.NewEmptyDense[T](c.VocabSize, c.DModel)),
-		Embeddings: NewEmbeddings[T](c, repo),
+		LN:     layernorm.New[T](c.DModel, 1e-6),
+		Linear: nn.NewParam(mat.NewEmptyDense[T](c.VocabSize, c.DModel)),
+		Embeddings: NewEmbeddings[T](embeddings.Config{
+			Size:      c.DModel,
+			StoreName: c.EmbeddingsStoreName,
+			Trainable: false,
+		}, repo),
 	}
 }
 
