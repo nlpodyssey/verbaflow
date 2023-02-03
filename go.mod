@@ -1,6 +1,6 @@
 module github.com/nlpodyssey/verbaflow
 
-go 1.19
+go 1.20
 
 require (
 	github.com/nlpodyssey/gopickle v0.1.1-0.20230115185652-9519404270b9
