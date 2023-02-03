@@ -101,7 +101,7 @@ Loop:
 			sequence = append(sequence, selectedOutput)
 			sumNegLogProbs += -math.Log(selectedOutputScore)
 
-			if !(selectedOutput == d.opts.EndTokenID && d.opts.SkipEndTokenID) {
+			if d.checkWriteConditions(selectedOutput) {
 				err = buffer.Write(StepResult{
 					TokenID:        selectedOutput,
 					SumNegLogProbs: sumNegLogProbs,
@@ -133,6 +133,10 @@ func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix
 	}
 	logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
 	return logits
+}
+
+func (d *Decoder) checkWriteConditions(tokenID int) bool {
+	return !(tokenID == d.opts.EndTokenID && d.opts.SkipEndTokenID)
 }
 
 func (d *Decoder) checkStopConditions(sequence []int) bool {
