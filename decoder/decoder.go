@@ -38,6 +38,8 @@ type DecodingOptions struct {
 	StopSequencesIDs [][]int
 	// EndTokenID is the end-of-sequence token (default: 0).
 	EndTokenID int
+	// SkipEndTokenID when true, the end token is not added to the generated sequence.
+	SkipEndTokenID bool
 	// Temperature is the temperature used to control the randomness of the generated text.
 	Temp float64
 	// TopK is the number of tokens to consider when sampling the next token.
@@ -61,16 +63,11 @@ func New(m *rwkvlm.Model, opts DecodingOptions) *Decoder {
 	}
 }
 
-type Result struct {
-	// Sequence is a list of generated tokens ids.
-	Sequence []int
-	// Score is the sum of the negative log probabilities of the generated tokens.
-	Score float64
-}
+func (d *Decoder) Decode(ctx context.Context, input encoder.Result, buffer ChannelBuffer) error {
+	defer buffer.Close()
 
-func (d *Decoder) Decode(ctx context.Context, input encoder.Result) (*Result, error) {
 	if input.HiddenRepresentation == nil || input.State == nil {
-		return nil, fmt.Errorf("invalid input: hidden representation and state are required")
+		return fmt.Errorf("invalid input: hidden representation and state are required")
 	}
 
 	nt := &ag.NodesTracker{}
@@ -90,35 +87,43 @@ Loop:
 		default:
 			logits, err := d.predict(ctx, nt, x)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			candidates, err := d.applyOutputControl(d.adjustLogits(logits.Value(), len(sequence)))
 			if err != nil {
-				return nil, err
+				return err
 			}
 			selectedOutput, selectedOutputScore, err := d.applySelection(candidates)
 			if err != nil {
-				return nil, err
+				return err
 			}
+
 			sequence = append(sequence, selectedOutput)
 			sumNegLogProbs += -math.Log(selectedOutputScore)
+
+			if !(selectedOutput == d.opts.EndTokenID && d.opts.SkipEndTokenID) {
+				err = buffer.Write(StepResult{
+					TokenID:        selectedOutput,
+					SumNegLogProbs: sumNegLogProbs,
+				})
+				if err != nil {
+					return err
+				}
+			}
 
 			if stopGeneration := d.checkStopConditions(sequence); stopGeneration {
 				break Loop
 			}
 			x, err = d.encode(ctx, nt, selectedOutput, s)
 			if err != nil {
-				return nil, err
+				return err
 			}
 		}
 	}
 
-	sequence = d.removeEndTokenID(sequence)
+	log.Trace().Msgf("[%.2f] Generated token IDs: %v", sumNegLogProbs, sequence)
 
-	return &Result{
-		Sequence: sequence,
-		Score:    sumNegLogProbs,
-	}, nil
+	return nil
 }
 
 // adjustLogits checks if the sequence is too short and if so, set the logits of the end token to a very low value.
@@ -128,17 +133,6 @@ func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix
 	}
 	logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
 	return logits
-}
-
-// removeEndTokenID removes the end token ID from the sequence if present.
-func (d *Decoder) removeEndTokenID(sequence []int) []int {
-	if len(sequence) == 0 {
-		return sequence
-	}
-	if sequence[len(sequence)-1] == d.opts.EndTokenID {
-		return sequence[:len(sequence)-1]
-	}
-	return sequence
 }
 
 func (d *Decoder) checkStopConditions(sequence []int) bool {

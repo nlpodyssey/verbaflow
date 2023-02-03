@@ -61,33 +61,28 @@ func (vf *VerbaFlow) Close() error {
 // Generate generates a text from the given prompt.
 // The "out" channel is used to stream the generated text.
 // The generated text will be at most `maxTokens` long (in addition to the prompt).
-func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, opts decoder.DecodingOptions) (string, error) {
+func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, buffer decoder.ChannelBuffer, opts decoder.DecodingOptions) error {
 	log.Trace().Msgf("Tokenizing prompt: %q", prompt)
 	tokenized, err := vf.Tokenizer.Tokenize(prompt)
 	if err != nil {
-		return "", err
+		return err
 	}
-	log.Trace().Msgf("Prompt token IDs: %v", tokenized)
 
-	log.Trace().Msg("Preprocessing prompt...")
+	log.Trace().Msgf("Preprocessing token IDs: %v", tokenized)
 	encoderOutput, err := encoder.New(vf.Model).Encode(ctx, tokenized)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	log.Trace().Msg("Generating...")
-	decoderOutput, err := decoder.New(vf.Model, opts).Decode(ctx, encoderOutput)
+	err = decoder.New(vf.Model, opts).Decode(ctx, encoderOutput, buffer)
 	if err != nil {
-		return "", err
+		return err
 	}
-	log.Trace().Msgf("[%.2f] Generated token IDs: %v", decoderOutput.Score, decoderOutput.Sequence)
 
-	log.Trace().Msgf("Reconstructing text...")
-	generated, err := vf.Tokenizer.ReconstructText(decoderOutput.Sequence)
-	if err != nil {
-		return "", fmt.Errorf("failed to reconstruct text: %v", err)
-	}
-	log.Trace().Msgf("Generated text: %v", generated)
+	return nil
+}
 
-	return generated, nil
+func (vf *VerbaFlow) TokenByID(id int) (string, error) {
+	return vf.Tokenizer.ReconstructText([]int{id})
 }

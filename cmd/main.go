@@ -109,14 +109,15 @@ func inference(modelDir string) error {
 	log.Debug().Msgf("Ready.")
 
 	opts := decoder.DecodingOptions{
-		MinLen:       0,
-		MaxLen:       200,
-		EndTokenID:   0,
-		Temp:         1,
-		TopP:         0.8,
-		TopK:         10,
-		UseSampling:  true,
-		EndThreshold: 1.0,
+		MinLen:         0,
+		MaxLen:         200,
+		EndTokenID:     0,
+		SkipEndTokenID: true,
+		Temp:           1,
+		TopP:           0.8,
+		TopK:           120,
+		UseSampling:    true,
+		EndThreshold:   1.0,
 		StopSequencesIDs: [][]int{
 			{187, 23433, 27},    // \nQuestion:
 			{187, 50, 708, 329}, // \nQ & A:
@@ -129,13 +130,25 @@ func inference(modelDir string) error {
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 		defer stop()
 
-		generated, err2 := vf.Generate(ctx, text, opts)
-		if err2 != nil {
-			log.Fatal().Err(err2).Send()
-		}
+		// buffer is a channel that will receive the generated tokens
+		buffer := make(decoder.ChannelBuffer, opts.MaxLen)
 
-		fmt.Println(time.Since(start).Seconds())
-		fmt.Println(strings.TrimSpace(generated))
+		done := make(chan struct{})
+		go func() {
+			// prints the generated tokens to stdout
+			err := processBuffer(buffer, os.Stdout, done, vf.TokenByID)
+			if err != nil {
+				log.Error().Err(err).Send()
+			}
+		}()
+
+		err = vf.Generate(ctx, text, buffer, opts)
+		if err != nil {
+			log.Fatal().Err(err).Send()
+		}
+		log.Trace().Msgf("Inference time: %.2f seconds", time.Since(start).Seconds())
+
+		<-done
 		return nil
 	}
 
@@ -145,6 +158,23 @@ func inference(modelDir string) error {
 	}
 
 	return nil
+}
+
+// processBuffer prints the generated tokens to stdout.
+func processBuffer(buffer decoder.ChannelBuffer, w io.StringWriter, done chan struct{}, tokenByID func(int) (string, error)) error {
+	defer close(done)
+	for step := range buffer {
+		token, err := tokenByID(step.TokenID)
+		if err != nil {
+			return fmt.Errorf("failed to reconstruct text for token ID %d", step.TokenID)
+		}
+		_, err = w.WriteString(token)
+		if err != nil {
+			return err
+		}
+	}
+	_, err := w.WriteString("\n")
+	return err
 }
 
 // forEachInput calls the given callback function for each line of input.
