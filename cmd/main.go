@@ -178,22 +178,29 @@ func processBuffer(buffer decoder.ChannelBuffer, w io.StringWriter, done chan st
 }
 
 // forEachInput calls the given callback function for each line of input.
-func forEachInput(r io.Reader, callback func(text string) error) (err error) {
+func forEachInput(r io.Reader, callback func(text string) error) error {
 	scanner := bufio.NewScanner(r)
-Loop:
-	for {
-		fmt.Print("> ")
-		scanner.Scan()
+	for promptScan(scanner) {
 		text := scanner.Text()
 		if text == "" {
 			continue
 		}
 		text = strings.Replace(text, `\n`, "\n", -1)
-		if err = callback(text); err != nil {
-			break Loop
+		if err := callback(text); err != nil {
+			return err
 		}
 	}
-	return err
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("scanner error: %w", err)
+	}
+	return nil
+}
+
+func promptScan(scanner *bufio.Scanner) bool {
+	if _, err := fmt.Print("> "); err != nil {
+		panic(err)
+	}
+	return scanner.Scan()
 }
 
 // separateModelName separate the models directory from the model name, which format is "organization/model"
