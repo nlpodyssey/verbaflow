@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/gob"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -103,15 +104,15 @@ func Load(dir string) (*Model, error) {
 func Dump(obj *Model, filename string) error {
 	f, err := os.Create(filename)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open model dump file %q for writing: %w", filename, err)
 	}
 	defer func() {
 		if e := f.Close(); e != nil && err == nil {
-			err = e
+			err = fmt.Errorf("failed to close model dump file %q: %w", filename, e)
 		}
 	}()
 	if err = gobEncode(obj, f); err != nil {
-		return err
+		return fmt.Errorf("failed to encode model dump: %w", err)
 	}
 	return nil
 }

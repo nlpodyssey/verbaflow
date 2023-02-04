@@ -122,19 +122,7 @@ func (c *converter[T]) run() error {
 }
 
 func (c *converter[T]) dumpModel() (err error) {
-	f, err := os.Create(c.outFilename)
-	if err != nil {
-		return fmt.Errorf("failed to open model dump file %q for writing: %w", c.outFilename, err)
-	}
-	defer func() {
-		if e := f.Close(); e != nil && err == nil {
-			err = fmt.Errorf("failed to close model dump file %q: %w", c.outFilename, e)
-		}
-	}()
-	if err = gobEncode(c.model, f); err != nil {
-		return fmt.Errorf("failed to encode model dump: %w", err)
-	}
-	return nil
+	return Dump(c.model, c.outFilename)
 }
 
 func (c *converter[T]) convRootLayerNorm() (err error) {
