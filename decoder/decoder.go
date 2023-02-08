@@ -54,13 +54,17 @@ type DecodingOptions struct {
 	EndThreshold float64
 }
 
-func New(m *rwkvlm.Model, opts DecodingOptions) *Decoder {
+func New(m *rwkvlm.Model, opts DecodingOptions) (*Decoder, error) {
+	control, err := OutputDiversityControl(opts.Temp, opts.TopK, opts.TopP)
+	if err != nil {
+		return nil, err
+	}
 	return &Decoder{
 		model:              m,
-		applyOutputControl: OutputDiversityControl(opts.Temp, opts.TopK, opts.TopP),
-		applySelection:     OutputSelection(opts.UseSampling),
 		opts:               opts,
-	}
+		applyOutputControl: control,
+		applySelection:     OutputSelection(opts.UseSampling),
+	}, nil
 }
 
 func (d *Decoder) Decode(ctx context.Context, input encoder.Result, buffer ChannelBuffer) error {

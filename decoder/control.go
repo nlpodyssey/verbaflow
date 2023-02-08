@@ -6,6 +6,7 @@ package decoder
 
 import (
 	"container/heap"
+	"fmt"
 	"math"
 	"sort"
 
@@ -19,7 +20,17 @@ import (
 type OutputDiversityControlFunc func(logits mat.Matrix) (mat.Matrix, error)
 
 // OutputDiversityControl returns a function used to select the next token.
-func OutputDiversityControl(temp float64, topK int, topP float64) OutputDiversityControlFunc {
+func OutputDiversityControl(temp float64, topK int, topP float64) (OutputDiversityControlFunc, error) {
+	if temp < 0 || temp > 1 {
+		return nil, fmt.Errorf("invalid temperature value: %f. Must be between 0 and 1", temp)
+	}
+	if topK < 0 {
+		return nil, fmt.Errorf("invalid topK value: %d. Must be >= 0", topK)
+	}
+	if topP < 0 || topP > 1 {
+		return nil, fmt.Errorf("invalid topP value: %f. Must be between 0 and 1", topP)
+	}
+
 	result := make([]OutputDiversityControlFunc, 0, 3)
 	if temp != 1 {
 		result = append(result, TemperatureFunc(temp))
@@ -40,7 +51,7 @@ func OutputDiversityControl(temp float64, topK int, topP float64) OutputDiversit
 			}
 		}
 		return logits, err
-	}
+	}, nil
 }
 
 // TemperatureFunc applies a temperature to a matrix of scores.
@@ -49,6 +60,9 @@ func TemperatureFunc(temperature float64) OutputDiversityControlFunc {
 		return func(scores mat.Matrix) (mat.Matrix, error) {
 			return scores, nil
 		}
+	}
+	if temperature == 0 {
+		temperature = 0.01 // avoid division by zero
 	}
 	invTemperature := 1 / temperature
 	return func(scores mat.Matrix) (mat.Matrix, error) {
