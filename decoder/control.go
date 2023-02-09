@@ -13,6 +13,7 @@ import (
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/verbaflow/sliceutils"
+	"github.com/rs/zerolog/log"
 )
 
 // OutputDiversityControlFunc performs the pre-processing steps that are used to narrow down the set of candidate items
@@ -33,12 +34,19 @@ func OutputDiversityControl(temp float64, topK int, topP float64) (OutputDiversi
 
 	result := make([]OutputDiversityControlFunc, 0, 3)
 	if temp != 1 {
+		log.Trace().Float64("temperature", temp).Msg("Applying temperature control")
+		if temp == 0 {
+			log.Trace().Msg("Temperature is 0, setting it to 0.01 to avoid division by zero")
+			temp = 0.01 // avoid division by zero
+		}
 		result = append(result, TemperatureFunc(temp))
 	}
 	if topK != 0 {
+		log.Trace().Int("topK", topK).Msg("Applying topK control")
 		result = append(result, TopKFunc(topK, math.Inf(-1)))
 	}
 	if topP != 1 {
+		log.Trace().Float64("topP", topP).Msg("Applying topP control")
 		result = append(result, TopPFunc(topP, math.Inf(-1), 1)) // minSize = 2 if beam search is enabled
 	}
 
@@ -60,9 +68,6 @@ func TemperatureFunc(temperature float64) OutputDiversityControlFunc {
 		return func(scores mat.Matrix) (mat.Matrix, error) {
 			return scores, nil
 		}
-	}
-	if temperature == 0 {
-		temperature = 0.01 // avoid division by zero
 	}
 	invTemperature := 1 / temperature
 	return func(scores mat.Matrix) (mat.Matrix, error) {

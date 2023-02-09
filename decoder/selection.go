@@ -9,14 +9,17 @@ import (
 
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/rand"
+	"github.com/rs/zerolog/log"
 )
 
 type OutputSelectionFunc func(logits mat.Matrix) (int, float64, error)
 
 func OutputSelection(sampling bool) OutputSelectionFunc {
 	if sampling {
+		log.Trace().Msg("using multinomial sampling")
 		return MultinomialSampling()
 	}
+	log.Trace().Msg("using greedy decoding")
 	return GreedyDecoding()
 }
 
