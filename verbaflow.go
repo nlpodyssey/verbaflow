@@ -75,14 +75,15 @@ func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, buffer decoder
 	}
 
 	log.Trace().Msg("Generating...")
-	err = decoder.New(vf.Model, opts).Decode(ctx, encoderOutput, buffer)
+	d, err := decoder.New(vf.Model, opts)
 	if err != nil {
 		return err
 	}
 
-	return nil
+	return d.Decode(ctx, encoderOutput, buffer)
 }
 
+// TokenByID returns the token string for the given token ID.
 func (vf *VerbaFlow) TokenByID(id int) (string, error) {
 	return vf.Tokenizer.ReconstructText([]int{id})
 }
