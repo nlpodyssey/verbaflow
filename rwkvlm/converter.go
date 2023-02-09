@@ -28,7 +28,7 @@ import (
 const (
 	DefaultPyModelFilename   = "pytorch_model.pt"
 	DefaultOutputFilename    = "spago_model.bin"
-	DefaultEmbeddingRepoPath = "spago_embedding"
+	DefaultEmbeddingRepoPath = "embeddings"
 
 	DefaultLayerNormEps = 1e-5
 )
@@ -38,9 +38,9 @@ type ConverterConfig struct {
 	ModelDir string
 	// The path to the input model file (default "pytorch_model.pt")
 	PyModelFilename string
-	// The path to the output model file (default "spago_model.pt")
+	// The path to the output model file (default "spago_model.bin")
 	GoModelFilename string
-	// The path to the embedding repository (default "spago_embedding")
+	// The path to the embedding repository (default "embeddings")
 	EmbeddingRepoPath string
 	// If true, overwrite the model file if it already exists (default "false")
 	OverwriteIfExist bool
