@@ -55,14 +55,14 @@ type DecodingOptions struct {
 }
 
 func New(m *rwkvlm.Model, opts DecodingOptions) (*Decoder, error) {
-	control, err := OutputDiversityControl(opts.Temp, opts.TopK, opts.TopP)
+	dc, err := OutputDiversityControl(opts.Temp, opts.TopK, opts.TopP)
 	if err != nil {
 		return nil, err
 	}
 	return &Decoder{
 		model:              m,
 		opts:               opts,
-		applyOutputControl: control,
+		applyOutputControl: dc,
 		applySelection:     OutputSelection(opts.UseSampling),
 	}, nil
 }
@@ -74,6 +74,7 @@ func (d *Decoder) Decode(ctx context.Context, input encoder.Result, buffer Chann
 		return fmt.Errorf("invalid input: hidden representation and state are required")
 	}
 
+	// free the computational graph after the generation is finished
 	nt := &ag.NodesTracker{}
 	defer nt.ReleaseNodes()
 
@@ -89,30 +90,19 @@ Loop:
 			x.Value() // wait for the computation to finish
 			break Loop
 		default:
-			logits, err := d.predict(ctx, nt, x)
+			selectedOutput, selectedOutputScore, err := d.step(ctx, x, i, nt)
 			if err != nil {
 				return err
 			}
-			candidates, err := d.applyOutputControl(d.adjustLogits(logits.Value(), len(sequence)))
-			if err != nil {
-				return err
-			}
-			selectedOutput, selectedOutputScore, err := d.applySelection(candidates)
-			if err != nil {
-				return err
-			}
-
 			sequence = append(sequence, selectedOutput)
 			sumNegLogProbs += -math.Log(selectedOutputScore)
 
-			if d.checkWriteConditions(selectedOutput) {
-				err = buffer.Write(StepResult{
-					TokenID:        selectedOutput,
-					SumNegLogProbs: sumNegLogProbs,
-				})
-				if err != nil {
-					return err
-				}
+			err = buffer.Write(StepResult{
+				TokenID:        selectedOutput,
+				SumNegLogProbs: sumNegLogProbs,
+			})
+			if err != nil {
+				return err
 			}
 
 			if stopGeneration := d.checkStopConditions(sequence); stopGeneration {
@@ -130,6 +120,20 @@ Loop:
 	return nil
 }
 
+// step performs a single step of the decoding process.
+// It returns the selected output token ID and its score.
+func (d *Decoder) step(ctx context.Context, x ag.Node, seqLen int, nt *ag.NodesTracker) (selectedOutput int, selectedOutputScore float64, err error) {
+	logits, err := d.predict(ctx, nt, x)
+	if err != nil {
+		return
+	}
+	candidates, err := d.applyOutputControl(d.adjustLogits(logits.Value(), seqLen))
+	if err != nil {
+		return
+	}
+	return d.applySelection(candidates)
+}
+
 // adjustLogits checks if the sequence is too short and if so, set the logits of the end token to a very low value.
 func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix {
 	if sequenceLength >= d.opts.MinLen {
@@ -137,10 +141,6 @@ func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix
 	}
 	logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
 	return logits
-}
-
-func (d *Decoder) checkWriteConditions(tokenID int) bool {
-	return !(tokenID == d.opts.EndTokenID && d.opts.SkipEndTokenID)
 }
 
 func (d *Decoder) checkStopConditions(sequence []int) bool {
