@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package api;
+
+option go_package = "github.com/nlpodyssey/verbaflow/api";
+
+// LanguageModel is a gRPC service for generating tokens from a language model
+service LanguageModel {
+  // GenerateTokens generates tokens for the given prompt using the specified decoding parameters.
+  // The response is a stream of GeneratedToken messages, each containing a generated token and its score and encoded representation.
+  rpc GenerateTokens (TokenGenerationRequest) returns (stream GeneratedToken);
+}
+
+// TokenGenerationRequest contains the prompt and decoding parameters for generating tokens
+message TokenGenerationRequest {
+  // Prompt is the input string to use as a starting point for token generation
+  string prompt = 1;
+  // DecodingParameters are the parameters to use for token generation
+  DecodingParameters decoding_parameters = 2;
+}
+
+// DecodingParameters contains the parameters to use for token generation
+message DecodingParameters {
+  // MaxLen is the maximum number of tokens to generate.
+  int32 max_len = 1;
+  // MinLen is the minimum number of tokens to generate.
+  int32 min_len = 2;
+  // Temperature controls the randomness of the generated tokens. A higher temperature will result in more diverse generated tokens.
+  float temperature = 3;
+  // TopK is the maximum number of tokens to consider when sampling the next token.
+  int32 top_k = 4;
+  // TopP is the cumulative probability of the tokens to consider when sampling the next token.
+  float top_p = 5;
+  // UseSampling uses sampling to generate the next token.
+  bool use_sampling = 6;
+  // EndTokenID is the end-of-sequence token (default: 0).
+  int32 end_token_id = 7;
+  // SkipEndTokenID when true, the end token is not added to the generated sequence.
+  bool skip_end_token_id = 8;
+  // StopSequences are the sequences of token ids that will cause the generation to stop.
+  repeated Sequence stop_sequences = 9;
+}
+
+// Sequence is a sequence of token ids
+message Sequence {
+  // Sequence is the sequence of token ids
+  repeated int32 sequence=1;
+}
+
+// GeneratedToken contains a generated token, its score, and its encoded representation
+message GeneratedToken {
+  // Token is the generated token
+  string token = 1;
+  // Score is the sum of the negative log probabilities up to the current step.
+  float score = 2;
+}
