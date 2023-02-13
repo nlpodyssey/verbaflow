@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
 	"github.com/nlpodyssey/verbaflow/decoder"
@@ -61,18 +62,20 @@ func (vf *VerbaFlow) Close() error {
 // Generate generates a text from the given prompt.
 // The "out" channel is used to stream the generated text.
 // The generated text will be at most `maxTokens` long (in addition to the prompt).
-func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, buffer decoder.ChannelBuffer, opts decoder.DecodingOptions) error {
+func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, chGen chan decoder.GeneratedToken, opts decoder.DecodingOptions) error {
 	log.Trace().Msgf("Tokenizing prompt: %q", prompt)
 	tokenized, err := vf.Tokenizer.Tokenize(prompt)
 	if err != nil {
 		return err
 	}
 
-	log.Trace().Msgf("Preprocessing token IDs: %v", tokenized)
+	log.Trace().Msgf("Preprocessing %d token IDs: %v", len(tokenized), tokenized)
+	start := time.Now()
 	encoderOutput, err := encoder.New(vf.Model).Encode(ctx, tokenized)
 	if err != nil {
 		return err
 	}
+	log.Trace().Msgf("Preprocessing took %s", time.Since(start))
 
 	log.Trace().Msg("Generating...")
 	d, err := decoder.New(vf.Model, opts)
@@ -80,7 +83,7 @@ func (vf *VerbaFlow) Generate(ctx context.Context, prompt string, buffer decoder
 		return err
 	}
 
-	return d.Decode(ctx, encoderOutput, buffer)
+	return d.Decode(ctx, encoderOutput, chGen)
 }
 
 // TokenByID returns the token string for the given token ID.
