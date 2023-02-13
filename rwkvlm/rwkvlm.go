@@ -133,26 +133,18 @@ func (m *Model) ApplyEmbeddings(repo *diskstore.Repository) (err error) {
 }
 
 // Encode returns the encoding of the given input considering the last state.
-func (m *Model) Encode(ctx context.Context, context []int, s rwkv.State, encodeFullSequence bool) (ag.Node, rwkv.State) {
-	if encodeFullSequence {
-		// transform the context into a sequence of embeddings
-		encoded := m.Embeddings.Encode(context)
-		var x ag.Node
-		for _, e := range encoded {
-			select {
-			case <-ctx.Done():
-				log.Debug().Msgf("context cancelled: %v", ctx.Err())
-				return nil, s
-			default:
-				x, s = m.Encoder.Forward(e, s)
-			}
-		}
-		return x, s
+// At least one token is required, otherwise can panic.
+// If the input is a sequence, the last state is returned.
+func (m *Model) Encode(_ context.Context, tokens []int, s rwkv.State) (ag.Node, rwkv.State) {
+	x := m.Embeddings.Encode(tokens)
+	if len(x) == 1 {
+		return m.Encoder.ForwardSingle(x[0], s)
 	}
 
-	// encode only the last token
-	x := m.Embeddings.Encode(context[len(context)-1:])[0]
-	return m.Encoder.Forward(x, s)
+	log.Trace().Msgf("Encoding sequence of %d tokens...", len(x))
+	var h []ag.Node
+	h, s = m.Encoder.ForwardSequence(x, s)
+	return h[len(h)-1], s
 }
 
 // Predict returns the prediction logits of the next token.

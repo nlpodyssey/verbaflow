@@ -17,8 +17,8 @@ type Encoder struct {
 }
 
 type Result struct {
-	HiddenRepresentation ag.Node
-	State                rwkv.State
+	Encoding ag.Node
+	State    rwkv.State
 }
 
 func New(model *rwkvlm.Model) *Encoder {
@@ -26,9 +26,9 @@ func New(model *rwkvlm.Model) *Encoder {
 }
 
 func (e *Encoder) Encode(ctx context.Context, tokens []int) (Result, error) {
-	x, s := e.model.Encode(ctx, tokens, nil, true)
+	x, s := e.model.Encode(ctx, tokens, nil)
 	return Result{
-		HiddenRepresentation: ag.WaitForValue(x),
-		State:                s,
+		Encoding: ag.WaitForValue(x),
+		State:    s,
 	}, nil
 }
