@@ -30,28 +30,28 @@ The original `RWKV-4-Pile-3B-Instruct-test1-20230124` model, from which this mod
 The following commands can be used to build and use VerbaFlow:
 
 ```console
-go build -o verbaflow cmd/main.go
+go build ./cmd/verbaflow
 ```
 
 This command builds the go program and creates an executable named `verbaflow`.
 
 ```console
-./verbaflow download models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+./verbaflow -model-dir models/nlpodyssey/RWKV-4-Pile-3B-Instruct download
 ```
 
 This command downloads the model specified (in this case, "nlpodyssey/RWKV-4-Pile-3B-Instruct" under the "models" directory)
 
 ```console
-./verbaflow convert models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+./verbaflow -model-dir models/nlpodyssey/RWKV-4-Pile-3B-Instruct convert
 ```
 
 This command converts the downloaded model to the format used by the program.
 
 ```console
-./verbaflow inference models/nlpodyssey/RWKV-4-Pile-3B-Instruct
+./verbaflow -log-level trace -model-dir models/nlpodyssey/RWKV-4-Pile-3B-Instruct inference --address :50051
 ```
 
-This command runs the inference on the specified model.
+This command runs the gRPC inference endpoint on the specified model.
 
 Please make sure to have the necessary dependencies installed before running the above commands.
 
@@ -59,7 +59,7 @@ Please make sure to have the necessary dependencies installed before running the
 
 One of the most interesting features of the LLM is the ability to react based on the prompt.
 
-Running `verbaflow` with the command in inference, enter the following prompts:
+Run the `verbaflow` gRPC endpoint with the command in inference, then run the `client` example entering the following prompts:
 
 ### Example 1
 
@@ -104,11 +104,11 @@ A list of the main dependencies follows:
 - [ ] Effective "prompts" catalog
 - [x] Better sampling
 - [ ] Beam search
-- [ ] Tokenizer
+- [ ] Better Tokenizer
 - [ ] Unit tests
 - [ ] Code refactoring
 - [ ] Documentation
-- [ ] gRPC/HTTP API
+- [x] gRPC ~~/HTTP~~ API
 
 # Credits
 
