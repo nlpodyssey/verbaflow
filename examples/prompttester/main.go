@@ -155,14 +155,13 @@ func inputTextFromStdin() (string, error) {
 	if info.Size() == 0 {
 		return "", fmt.Errorf("no input provided")
 	}
-	input, err := io.ReadAll(os.Stdin)
+	data, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return "", fmt.Errorf("error reading from standard input: %w", err)
 	}
-
-	log.Trace().Msgf("Input: %q", string(input))
-
-	return string(input), nil
+	input := strings.TrimSuffix(string(data), "\n")
+	log.Trace().Msgf("Input: %q", input)
+	return input, nil
 }
 
 func buildInputPrompt(text, data string) (verbaflow.InputPrompt, error) {
