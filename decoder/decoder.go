@@ -31,23 +31,23 @@ type Decoder struct {
 // DecodingOptions contains the options for the conditional text generation.
 type DecodingOptions struct {
 	// MaxLen is the maximum number of tokens to generate.
-	MaxLen int
+	MaxLen int `json:"max_len" yaml:"max_len"`
 	// MinLen is the minimum number of tokens to generate.
-	MinLen int
+	MinLen int `json:"min_len" yaml:"min_len"`
 	// StopSequencesIDs is a list of token ids that if generated, the generation process will stop.
-	StopSequencesIDs [][]int
+	StopSequencesIDs [][]int `json:"stop_sequences_ids" yaml:"stop_sequences_ids"`
 	// EndTokenID is the end-of-sequence token (default: 0).
-	EndTokenID int
+	EndTokenID int `json:"end_token_id" yaml:"end_token_id"`
 	// SkipEndTokenID when true, the end token is not added to the generated sequence.
-	SkipEndTokenID bool
+	SkipEndTokenID bool `json:"skip_end_token_id" yaml:"skip_end_token_id"`
 	// Temperature is the temperature used to control the randomness of the generated text.
-	Temp float64
+	Temp float64 `json:"temp" yaml:"temp"`
 	// TopK is the number of tokens to consider when sampling the next token.
-	TopK int
+	TopK int `json:"top_k" yaml:"top_k"`
 	// TopP is the cumulative probability of the tokens to consider when sampling the next token.
-	TopP float64
+	TopP float64 `json:"top_p" yaml:"top_p"`
 	// UseSampling uses sampling to generate the next token.
-	UseSampling bool
+	UseSampling bool `json:"use_sampling" yaml:"use_sampling"`
 }
 
 // GeneratedToken is the result of a single step of the decoder.
