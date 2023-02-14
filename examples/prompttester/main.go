@@ -29,8 +29,8 @@ type pTemplate struct {
 }
 
 var defaultPromptTemplate = pTemplate{
-	data: "\n\n{{.Text}}",
-	pt:   template.Must(template.New("").Parse("\n\n{{.Text}}")),
+	data: "{{.Text}}",
+	pt:   template.Must(template.New("").Parse("{{.Text}}")),
 }
 
 func main() {
