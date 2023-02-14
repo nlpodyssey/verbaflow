@@ -59,14 +59,14 @@ Please make sure to have the necessary dependencies installed before running the
 
 One of the most interesting features of the LLM is the ability to react based on the prompt.
 
-Run the `verbaflow` gRPC endpoint with the command in inference, then run the `client` example entering the following prompts:
+Run the `verbaflow` gRPC endpoint with the command in inference, then run the `prompttester` example entering the following prompts:
 
 ### Example 1
 
 Prompt:
 
 ```console
-\nQ: Briefly: The Universe is expanding, its constituent galaxies flying apart like pieces of cosmic shrapnel in the aftermath of the Big Bang. Which section of a newspaper would this article likely appear in?\n\nA:
+echo '\nQ: Briefly: The Universe is expanding, its constituent galaxies flying apart like pieces of cosmic shrapnel in the aftermath of the Big Bang. Which section of a newspaper would this article likely appear in?\n\nA:' | go run ./examples/prompttester --dconfig ./examples/prompttester/config.yaml
 ```
 
 Expected output:
@@ -80,7 +80,8 @@ Science and Technology
 Prompt:
 
 ```console
-\nQ:Translate the following text from French to English Je suis le père le plus heureux du monde\n\nA:
+echo '\nQ:Translate the following text from French to English Je suis le p
+ère le plus heureux du monde\n\nA:' | go run ./examples/prompttester --dconfig ./examples/prompttester/config.yaml
 ```
 
 Expected output:
