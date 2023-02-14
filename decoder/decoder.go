@@ -140,6 +140,7 @@ func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix
 	if sequenceLength >= d.opts.MinLen {
 		return logits
 	}
+	log.Trace().Msgf("Sequence too short (%d), setting end token (%d) logits to -inf", sequenceLength, d.opts.EndTokenID)
 	logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
 	return logits
 }

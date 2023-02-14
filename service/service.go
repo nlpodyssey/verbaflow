@@ -107,7 +107,7 @@ func (s *Server) GenerateTokens(req *api.TokenGenerationRequest, stream api.Lang
 func grpcToDecodingOptions(dp *api.DecodingParameters) decoder.DecodingOptions {
 	return decoder.DecodingOptions{
 		MaxLen:           int(dp.MaxLen),
-		MinLen:           int(dp.MaxLen),
+		MinLen:           int(dp.MinLen),
 		StopSequencesIDs: nil,
 		EndTokenID:       int(dp.EndTokenId),
 		SkipEndTokenID:   dp.SkipEndTokenId,
