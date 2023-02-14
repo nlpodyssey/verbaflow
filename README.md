@@ -80,8 +80,7 @@ Science and Technology
 Prompt:
 
 ```console
-echo '\nQ:Translate the following text from French to English Je suis le p
-ère le plus heureux du monde\n\nA:' | go run ./examples/prompttester --dconfig ./examples/prompttester/config.yaml
+echo '\nQ:Translate the following text from French to English Je suis le père le plus heureux du monde\n\nA:' | go run ./examples/prompttester --dconfig ./examples/prompttester/config.yaml
 ```
 
 Expected output:
