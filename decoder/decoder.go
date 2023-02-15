@@ -171,7 +171,7 @@ func hasStopSequence(sequence []int, stopSequences [][]int) bool {
 }
 
 func (d *Decoder) encode(ctx context.Context, nt *ag.NodesTracker, tokenID int, state rwkv.State) (ag.Node, error) {
-	x, s := d.model.Encode(ctx, []int{tokenID}, state)
+	x, s := d.model.Encode(ctx, state, tokenID)
 	nt.TrackNodes(waitForNodes(extractNodesToRelease(x, s))...)
 	return x, nil
 }

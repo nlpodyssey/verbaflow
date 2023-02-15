@@ -26,7 +26,7 @@ func New(model *rwkvlm.Model) *Encoder {
 }
 
 func (e *Encoder) Encode(ctx context.Context, tokens []int) (Result, error) {
-	x, s := e.model.Encode(ctx, tokens, nil)
+	x, s := e.model.Encode(ctx, nil, tokens...)
 	return Result{
 		Encoding: ag.WaitForValue(x),
 		State:    s,

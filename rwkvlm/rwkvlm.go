@@ -132,18 +132,27 @@ func (m *Model) ApplyEmbeddings(repo *diskstore.Repository) (err error) {
 	return err
 }
 
-// Encode returns the encoding of the given input considering the last state.
+// Encode performs EncodeTokens and EncodeEmbeddings.
+func (m *Model) Encode(ctx context.Context, s rwkv.State, tokens ...int) (ag.Node, rwkv.State) {
+	return m.EncodeEmbeddings(ctx, s, m.Embeddings.Encode(tokens))
+}
+
+// EncodeTokens returns the embeddings of the given tokens.
+func (m *Model) EncodeTokens(_ context.Context, tokens ...int) []ag.Node {
+	return m.Embeddings.Encode(tokens)
+}
+
+// EncodeEmbeddings returns the encoding of the given input considering the last state.
 // At least one token is required, otherwise can panic.
 // If the input is a sequence, the last state is returned.
-func (m *Model) Encode(_ context.Context, tokens []int, s rwkv.State) (ag.Node, rwkv.State) {
-	x := m.Embeddings.Encode(tokens)
-	if len(x) == 1 {
-		return m.Encoder.ForwardSingle(x[0], s)
+func (m *Model) EncodeEmbeddings(_ context.Context, s rwkv.State, xs []ag.Node) (ag.Node, rwkv.State) {
+	if len(xs) == 1 {
+		return m.Encoder.ForwardSingle(xs[0], s)
 	}
 
-	log.Trace().Msgf("Encoding sequence of %d tokens...", len(x))
+	log.Trace().Msgf("Encoding sequence of %d tokens...", len(xs))
 	var h []ag.Node
-	h, s = m.Encoder.ForwardSequence(x, s)
+	h, s = m.Encoder.ForwardSequence(xs, s)
 	return h[len(h)-1], s
 }
 
