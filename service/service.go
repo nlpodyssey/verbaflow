@@ -10,6 +10,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/verbaflow"
 	"github.com/nlpodyssey/verbaflow/api"
 	"github.com/nlpodyssey/verbaflow/decoder"
@@ -69,9 +70,13 @@ func (s *Server) GenerateTokens(req *api.TokenGenerationRequest, stream api.Lang
 	chGen := make(chan decoder.GeneratedToken, opts.MaxLen)
 	errCh := make(chan error)
 	go func() {
+		// free the computational graph after the generation is finished
+		nt := &ag.NodesTracker{}
+		defer nt.ReleaseNodes()
+
 		log.Trace().Msgf("Decoding...")
 		start := time.Now()
-		errCh <- s.vf.Generate(ctx, req.GetPrompt(), chGen, opts)
+		errCh <- s.vf.Generate(ctx, nt, req.GetPrompt(), chGen, opts)
 		log.Trace().Msgf("Inference time: %.2f seconds", time.Since(start).Seconds())
 	}()
 

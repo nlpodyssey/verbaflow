@@ -71,18 +71,13 @@ func New(m *rwkvlm.Model, opts DecodingOptions) (*Decoder, error) {
 	}, nil
 }
 
-func (d *Decoder) Decode(ctx context.Context, input encoder.Result, chGen chan GeneratedToken) error {
+func (d *Decoder) Decode(ctx context.Context, nt *ag.NodesTracker, input encoder.Result, chGen chan GeneratedToken) error {
 	defer close(chGen)
 
-	if input.Encoding == nil || input.State == nil {
+	x, s := input.Encoding, input.State
+	if x == nil || s == nil {
 		return fmt.Errorf("invalid input: hidden representation and state are required")
 	}
-
-	// free the computational graph after the generation is finished
-	nt := &ag.NodesTracker{}
-	defer nt.ReleaseNodes()
-
-	x, s := input.Encoding, input.State
 
 	var sequence []int
 	var sumNegLogProbs float64
