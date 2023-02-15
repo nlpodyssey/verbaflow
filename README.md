@@ -9,7 +9,7 @@ With the ability to utilize pretrained models on the [Pile](https://arxiv.org/ab
 
 Requirements:
 
-* [Go 1.19](https://golang.org/dl/)
+* [Go 1.20](https://golang.org/dl/)
 
 Clone this repo or get the library:
 
