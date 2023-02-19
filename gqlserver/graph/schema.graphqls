@@ -1,0 +1,25 @@
+type Query {
+  currentUser: User!
+}
+
+type Mutation {
+  signIn: SignInPayload!
+  signOut: SignOutPayload!
+}
+
+type User {
+  username: String!
+}
+
+type SignInPayload {
+  user: User
+  error: Error
+}
+
+type SignOutPayload {
+  error: Error
+}
+
+type Error {
+  message: String!
+}
