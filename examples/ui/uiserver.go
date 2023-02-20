@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/nlpodyssey/verbaflow/api"
 	"github.com/nlpodyssey/verbaflow/decoder"
@@ -89,7 +90,7 @@ func (s *UIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			}()
 
 			tokenStream, err := s.lmClient.GenerateTokens(genCtx, &api.TokenGenerationRequest{
-				Prompt:             cliMsg.Value,
+				Prompt:             strings.ReplaceAll(cliMsg.Value, `\n`, "\n"),
 				DecodingParameters: s.decParams,
 			})
 			if err != nil {
