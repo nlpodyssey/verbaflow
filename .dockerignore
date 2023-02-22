@@ -1,0 +1,13 @@
+.DS_Store
+.dockerignore
+.env
+.git
+.gitignore
+.idea
+.vscode
+Dockerfile
+data
+examples
+go.work
+go.work.sum
+models
