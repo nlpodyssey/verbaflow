@@ -7,8 +7,8 @@ package encoder
 import (
 	"context"
 
-	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/ag"
+	"github.com/nlpodyssey/verbaflow/rwkv"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 )
 
@@ -27,8 +27,9 @@ func New(model *rwkvlm.Model) *Encoder {
 
 func (e *Encoder) Encode(ctx context.Context, tokens []int) (Result, error) {
 	x, s := e.model.Encode(ctx, nil, tokens...)
+	x.Value() // wait for the value to be computed
 	return Result{
-		Encoding: ag.WaitForValue(x),
+		Encoding: x,
 		State:    s,
 	}, nil
 }

@@ -10,9 +10,9 @@ import (
 	"io"
 	"os"
 
-	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/nn"
 	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
+	"github.com/nlpodyssey/verbaflow/rwkv"
 )
 
 func gobEncode(obj *Model, w io.Writer) error {
@@ -35,7 +35,7 @@ func getChunksForGobEncoding(obj *Model) []interface{} {
 		obj.Config,
 		obj.Embeddings,
 		obj.LN,
-		obj.Linear.(*nn.BaseParam),
+		obj.Linear,
 		obj.Encoder.Config,
 	}
 	for _, layer := range obj.Encoder.Layers {
@@ -62,14 +62,14 @@ func loadFromFile(filename string) (*Model, error) {
 func gobDecoding(r io.Reader) (*Model, error) {
 	obj := &Model{
 		LN:      &layernorm.Model{},
-		Linear:  &nn.BaseParam{},
+		Linear:  &nn.Param{},
 		Encoder: &rwkv.Model{},
 	}
 
 	br := bufio.NewReader(r)
 	decoder := gob.NewDecoder(br)
 
-	w := nn.BaseParam{}
+	w := nn.Param{}
 
 	if err := decoder.Decode(&obj.Config); err != nil {
 		return nil, err

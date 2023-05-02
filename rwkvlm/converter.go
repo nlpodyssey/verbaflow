@@ -14,21 +14,18 @@ import (
 
 	"github.com/nlpodyssey/gopickle/pytorch"
 	"github.com/nlpodyssey/gopickle/types"
-	"github.com/nlpodyssey/rwkv"
-	"github.com/nlpodyssey/spago/embeddings"
-	"github.com/nlpodyssey/spago/embeddings/store"
-	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/spago/nn"
+	"github.com/nlpodyssey/spago/nn/embedding"
 	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
+	"github.com/nlpodyssey/verbaflow/rwkv"
 	"github.com/rs/zerolog/log"
 )
 
 const (
-	DefaultPyModelFilename   = "pytorch_model.pt"
-	DefaultOutputFilename    = "spago_model.bin"
-	DefaultEmbeddingRepoPath = "embeddings"
+	DefaultPyModelFilename = "pytorch_model.pt"
+	DefaultOutputFilename  = "spago_model.bin"
 
 	DefaultLayerNormEps = 1e-5
 )
@@ -40,8 +37,6 @@ type ConverterConfig struct {
 	PyModelFilename string
 	// The path to the output model file (default "spago_model.bin")
 	GoModelFilename string
-	// The path to the embedding repository (default "embeddings")
-	EmbeddingRepoPath string
 	// If true, overwrite the model file if it already exists (default "false")
 	OverwriteIfExist bool
 }
@@ -54,9 +49,6 @@ func ConvertPickledModelToRWKVLM[T float.DType](config ConverterConfig) error {
 	}
 	if config.GoModelFilename == "" {
 		config.GoModelFilename = DefaultOutputFilename
-	}
-	if config.EmbeddingRepoPath == "" {
-		config.EmbeddingRepoPath = DefaultEmbeddingRepoPath
 	}
 
 	outputFilename := filepath.Join(config.ModelDir, config.GoModelFilename)
@@ -73,8 +65,7 @@ func ConvertPickledModelToRWKVLM[T float.DType](config ConverterConfig) error {
 	}
 
 	inFilename := filepath.Join(config.ModelDir, config.PyModelFilename)
-	embRepoPath := filepath.Join(config.ModelDir, config.EmbeddingRepoPath)
-	conv := newConverter[T](modelConfig, inFilename, outputFilename, embRepoPath)
+	conv := newConverter[T](modelConfig, inFilename, outputFilename)
 	err = conv.run()
 	if err != nil {
 		return fmt.Errorf("model conversion failed: %w", err)
@@ -95,12 +86,11 @@ type converter[T float.DType] struct {
 	params      paramsMap
 }
 
-func newConverter[T float.DType](conf Config, inFilename, outFilename, embRepoPath string) *converter[T] {
+func newConverter[T float.DType](conf Config, inFilename, outFilename string) *converter[T] {
 	return &converter[T]{
 		model:       &Model{Config: conf},
 		inFilename:  inFilename,
 		outFilename: outFilename,
-		embRepoPath: embRepoPath,
 	}
 }
 
@@ -156,37 +146,12 @@ func (c *converter[T]) convEmbeddings() error {
 		return fmt.Errorf("expected embedding vectors to match configured size %d, actual %d", dm, vecs[0].Size())
 	}
 
-	return c.withEmbRepo(func(repo store.Repository) {
-		embs := c.newEmbeddings(repo)
-		for i, vec := range vecs {
-			embs.Tokens.EmbeddingFast(i).ReplaceValue(vec)
-		}
-		c.model.Embeddings = embs
-	})
-}
-
-func (c *converter[T]) newEmbeddings(repo store.Repository) *Embeddings {
-	return NewEmbeddings[T](embeddings.Config{
-		Size:      c.model.Config.DModel,
-		StoreName: c.model.Config.EmbeddingsStoreName,
-		Trainable: false,
-	}, repo)
-}
-
-func (c *converter[T]) withEmbRepo(fn func(store.Repository)) (err error) {
-	repo, err := diskstore.NewRepository(c.embRepoPath, diskstore.ReadWriteMode)
-	if err != nil {
-		return fmt.Errorf("failed to open embedding repository: %w", err)
+	embs := embedding.New[T](c.model.Config.VocabSize, c.model.Config.DModel)
+	for i, vec := range vecs {
+		embs.Weights[i].ReplaceValue(vec)
 	}
-	defer func() {
-		if e := repo.Close(); e != nil && err == nil {
-			err = fmt.Errorf("failed to close embedding repository: %w", e)
-		}
-	}()
-	if err = repo.DropAll(); err != nil {
-		err = fmt.Errorf("failed to drop embedding repository data: %w", err)
-	}
-	fn(repo)
+	c.model.Embeddings = embs
+
 	return nil
 }
 
@@ -250,9 +215,7 @@ func (c *converter[T]) convBlocks() error {
 }
 
 func (c *converter[T]) convBlock(id int, conf rwkv.Config, params paramsMap) (_ *rwkv.Layer, err error) {
-	layer := &rwkv.Layer{
-		ID: id,
-	}
+	layer := &rwkv.Layer{}
 
 	layer.ChanMix, err = c.convChanMix(id, params.fetchPrefixed("ffn."))
 	if err != nil {

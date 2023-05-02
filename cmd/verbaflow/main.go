@@ -141,7 +141,6 @@ func inference(ctx context.Context, modelDir string, address string) error {
 	if err != nil {
 		return err
 	}
-	defer vf.Close()
 
 	log.Debug().Msgf("Server listening on %s", address)
 	server := service.NewServer(vf)
@@ -162,5 +161,5 @@ func splitPathAndModelName(path string) (string, string, error) {
 }
 
 func init() {
-	ag.SetDebugMode(false)
+	ag.SetForceSyncExecution(false)
 }

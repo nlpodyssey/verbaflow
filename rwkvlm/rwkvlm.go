@@ -12,24 +12,22 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/ag"
-	"github.com/nlpodyssey/spago/embeddings"
-	"github.com/nlpodyssey/spago/embeddings/store"
-	"github.com/nlpodyssey/spago/embeddings/store/diskstore"
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/spago/nn"
+	"github.com/nlpodyssey/spago/nn/embedding"
 	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
+	"github.com/nlpodyssey/verbaflow/rwkv"
 	"github.com/rs/zerolog/log"
 )
 
 type Model struct {
 	nn.Module
-	Embeddings *Embeddings
+	Embeddings *embedding.Model
 	Encoder    *rwkv.Model
 	LN         *layernorm.Model
-	Linear     nn.Param `spago:"type:weights"`
+	Linear     *nn.Param
 	Config     Config
 }
 
@@ -72,7 +70,7 @@ func init() {
 	gob.Register(&Model{})
 }
 
-func New[T float.DType](c Config, repo store.Repository) *Model {
+func New[T float.DType](c Config) *Model {
 	return &Model{
 		Config: c,
 		Encoder: rwkv.New[T](rwkv.Config{
@@ -80,13 +78,9 @@ func New[T float.DType](c Config, repo store.Repository) *Model {
 			NumLayers:    c.NumHiddenLayers,
 			RescaleLayer: c.RescaleLayer,
 		}),
-		LN:     layernorm.New[T](c.DModel, 1e-6),
-		Linear: nn.NewParam(mat.NewEmptyDense[T](c.VocabSize, c.DModel)),
-		Embeddings: NewEmbeddings[T](embeddings.Config{
-			Size:      c.DModel,
-			StoreName: c.EmbeddingsStoreName,
-			Trainable: false,
-		}, repo),
+		LN:         layernorm.New[T](c.DModel, 1e-6),
+		Linear:     nn.NewParam(mat.NewEmptyDense[T](c.VocabSize, c.DModel)),
+		Embeddings: embedding.New[T](c.VocabSize, c.DModel),
 	}
 }
 
@@ -117,29 +111,22 @@ func Dump(obj *Model, filename string) error {
 	return nil
 }
 
-// ApplyEmbeddings sets the embeddings of the model.
-func (m *Model) ApplyEmbeddings(repo *diskstore.Repository) (err error) {
-	nn.Apply(m, func(model nn.Model, name string) {
-		switch em := model.(type) {
-		case *embeddings.Model[[]byte], *embeddings.Model[int], *embeddings.Model[string]:
-			if e := em.(interface {
-				UseRepository(repo store.Repository) error
-			}).UseRepository(repo); e != nil && err == nil {
-				err = e
-			}
-		}
-	})
-	return err
-}
-
 // Encode performs EncodeTokens and EncodeEmbeddings.
 func (m *Model) Encode(ctx context.Context, s rwkv.State, tokens ...int) (ag.Node, rwkv.State) {
-	return m.EncodeEmbeddings(ctx, s, m.Embeddings.Encode(tokens))
+	encoded, err := m.Embeddings.Encode(tokens)
+	if err != nil {
+		log.Fatal().Msgf("failed to encode tokens: %w", err)
+	}
+	return m.EncodeEmbeddings(ctx, s, encoded)
 }
 
 // EncodeTokens returns the embeddings of the given tokens.
 func (m *Model) EncodeTokens(_ context.Context, tokens ...int) []ag.Node {
-	return m.Embeddings.Encode(tokens)
+	encoded, err := m.Embeddings.Encode(tokens)
+	if err != nil {
+		log.Fatal().Msgf("failed to encode tokens: %w", err)
+	}
+	return encoded
 }
 
 // EncodeEmbeddings returns the encoding of the given input considering the last state.

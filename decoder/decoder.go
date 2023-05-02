@@ -10,11 +10,11 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/nlpodyssey/rwkv"
 	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/verbaflow/encoder"
+	"github.com/nlpodyssey/verbaflow/rwkv"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 	"github.com/rs/zerolog/log"
 )
@@ -71,7 +71,7 @@ func New(m *rwkvlm.Model, opts DecodingOptions) (*Decoder, error) {
 	}, nil
 }
 
-func (d *Decoder) Decode(ctx context.Context, nt *ag.NodesTracker, input encoder.Result, chGen chan GeneratedToken) error {
+func (d *Decoder) Decode(ctx context.Context, input encoder.Result, chGen chan GeneratedToken) error {
 	defer close(chGen)
 
 	x, s := input.Encoding, input.State
@@ -89,7 +89,7 @@ Loop:
 			log.Trace().Msgf("Generation cancelled after %d steps due to context cancellation", i)
 			break Loop
 		default:
-			tokenID, tokenScore, err := d.generateToken(ctx, x, i, nt)
+			tokenID, tokenScore, err := d.generateToken(ctx, x, i)
 			if err != nil {
 				return err
 			}
@@ -107,7 +107,7 @@ Loop:
 
 			// update the hidden representation `x` with the result of encoding the last generated token,
 			// which is used as input for the next iteration of the loop.
-			x, err = d.encode(ctx, nt, tokenID, s)
+			x, err = d.encode(ctx, tokenID, s)
 			if err != nil {
 				return err
 			}
@@ -121,8 +121,8 @@ Loop:
 
 // generateToken performs a single step of the decoding process.
 // It returns the selected output token ID and its score.
-func (d *Decoder) generateToken(_ context.Context, x ag.Node, seqLen int, nt *ag.NodesTracker) (int, float64, error) {
-	logits := nt.TrackNode(d.model.Predict(x))
+func (d *Decoder) generateToken(_ context.Context, x ag.Node, seqLen int) (int, float64, error) {
+	logits := d.model.Predict(x)
 	candidates, err := d.applyOutputControl(d.adjustLogits(logits.Value(), seqLen))
 	if err != nil {
 		return 0, 0, err
@@ -170,27 +170,7 @@ func hasStopSequence(sequence []int, stopSequences [][]int) bool {
 	return false
 }
 
-func (d *Decoder) encode(ctx context.Context, nt *ag.NodesTracker, tokenID int, state rwkv.State) (ag.Node, error) {
-	x, s := d.model.Encode(ctx, state, tokenID)
-	nt.TrackNodes(waitForNodes(extractNodesToRelease(x, s))...)
+func (d *Decoder) encode(ctx context.Context, tokenID int, state rwkv.State) (ag.Node, error) {
+	x, _ := d.model.Encode(ctx, state, tokenID)
 	return x, nil
-}
-
-// waitForNodes waits for the nodes to be computed.
-// It is used to ensure that the nodes are computed before releasing them.
-func waitForNodes(nodes []ag.Node) []ag.Node {
-	for _, n := range nodes {
-		n.Value()
-	}
-	return nodes
-}
-
-// extractNodesToRelease extracts the nodes to release from the states.
-// It also considers the explicit x node.
-func extractNodesToRelease(x ag.Node, s rwkv.State) []ag.Node {
-	nodes := []ag.Node{x}
-	for _, layer := range s {
-		nodes = append(nodes, layer.FfnXX, layer.AttXX, layer.AttAA, layer.AttBB, layer.AttPP)
-	}
-	return nodes
 }

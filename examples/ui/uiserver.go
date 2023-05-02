@@ -89,6 +89,8 @@ func (s *UIServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				}
 			}()
 
+			log.Trace().Msgf("prompt: %s", cliMsg.Value)
+
 			tokenStream, err := s.lmClient.GenerateTokens(genCtx, &api.TokenGenerationRequest{
 				Prompt:             strings.ReplaceAll(cliMsg.Value, `\n`, "\n"),
 				DecodingParameters: s.decParams,
