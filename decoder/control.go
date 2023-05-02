@@ -147,3 +147,25 @@ func TopPFunc[T float.DType](topP, filterValue T, minSize int) OutputDiversityCo
 		return mat.NewVecDense[T](outData), nil
 	}
 }
+
+// OccurrenceMap keeps track of the number of times each token has appeared in the generated text
+type OccurrenceMap map[int]int
+
+// DiversityFunc controls the diversity and repetitiveness of the generated text.
+// WARNING: The occurrence map is never reset, ensuring that the penalties are consistently
+// applied as the text is generated. This may cause issues if you need to reset the penalties
+// between different text generations.
+func DiversityFunc[T float.DType](presencePenalty, countPenalty T) OutputDiversityControlFunc {
+	occurrence := make(OccurrenceMap)
+
+	return func(scores mat.Matrix) (mat.Matrix, error) {
+		dataCopy := make([]T, scores.Size())
+		copy(dataCopy, mat.Data[T](scores))
+
+		for token, count := range occurrence {
+			dataCopy[token] -= presencePenalty + T(count)*countPenalty
+		}
+
+		return mat.NewVecDense[T](dataCopy), nil
+	}
+}
