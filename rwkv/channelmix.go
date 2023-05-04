@@ -50,7 +50,8 @@ func (m *ChannelMix) ForwardSingle(x ag.Node, state *LayerState) (rkv ag.Node) {
 	k := ag.Mul(m.Key, xk)
 	k = ag.Square(ag.ReLU(k))
 	kv := ag.Mul(m.Value, k)
-	rkv = ag.Prod(ag.Sigmoid(ag.Mul(m.Receptance, xr)), kv)
+	r := ag.Sigmoid(ag.Mul(m.Receptance, xr))
+	rkv = ag.Prod(r, kv)
 
 	state.FfnXX = x
 	return
@@ -67,7 +68,8 @@ func (m *ChannelMix) ForwardSequence(x []ag.Node, state *LayerState) (rkv []ag.N
 	k := mul(m.Key, xk)
 	k = square(relu(k))
 	kv := mul(m.Value, k)
-	rkv = prod2(sigmoid(mul(m.Receptance, xr)), kv)
+	r := sigmoid(mul(m.Receptance, xr))
+	rkv = prod2(r, kv)
 
 	state.FfnXX = x[len(x)-1]
 	return

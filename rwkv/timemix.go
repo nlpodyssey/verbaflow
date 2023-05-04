@@ -86,47 +86,68 @@ func (m *TimeMix) ForwardSingle(x ag.Node, state *LayerState) ag.Node {
 	return out
 }
 
-// ForwardSequence performs the forward step for a sequence of inputs.
-// The state is updated at the end of the sequence.
 func (m *TimeMix) ForwardSequence(x []ag.Node, state *LayerState) []ag.Node {
-	aa, bb, pp := state.AttAA, state.AttBB, state.AttPP
 	xx := append([]ag.Node{state.AttXX}, x[:len(x)-1]...)
 
-	xk := add(prod(m.TimeMixK, x), prod(ag.ReverseSubOne(m.TimeMixK), xx))
-	xv := add(prod(m.TimeMixV, x), prod(ag.ReverseSubOne(m.TimeMixV), xx))
-	xr := add(prod(m.TimeMixR, x), prod(ag.ReverseSubOne(m.TimeMixR), xx))
+	xk, xv, xr := m.computeIntermediateValues(x, xx)
+	k, v, r := m.computeKeyValuesReceptance(xk, xv, xr)
 
-	k := mul(m.Key, xk)
-	v := mul(m.Value, xv)
-	r := sigmoid(mul(m.Receptance, xr))
+	wkv, newAA, newBB, newPP := m.updateAttentionScores(state.AttAA, state.AttBB, state.AttPP, k, v)
 
-	wkv := make([]ag.Node, len(r))
-	for i := 0; i < len(r); i++ {
-		ww := ag.Add(k[i], m.TimeFirst)
-		p := ag.Max(pp, ww)
-		e1 := ag.Exp(ag.Sub(pp, p))
-		e2 := ag.Exp(ag.Sub(ww, p))
-		a := ag.Add(ag.Prod(e1, aa), ag.Prod(e2, v[i]))
-		b := ag.Add(ag.Prod(e1, bb), e2)
-		wkv[i] = ag.Div(a, b)
+	out := mul(m.Output, prod2(r, wkv))
 
-		// update intermediate values
-		ww = ag.Add(pp, m.TimeDecay)
-		p = ag.Max(ww, k[i])
-		e1 = ag.Exp(ag.Sub(ww, p))
-		e2 = ag.Exp(ag.Sub(k[i], p))
-		aa = ag.Add(ag.Prod(e1, aa), ag.Prod(e2, v[i]))
-		bb = ag.Add(ag.Prod(e1, bb), e2)
-		pp = p
+	updateState(state, x, newAA, newBB, newPP)
+
+	return out
+}
+
+func (m *TimeMix) computeIntermediateValues(x, xx []ag.Node) (xk, xv, xr []ag.Node) {
+	xk = add(prod(m.TimeMixK, x), prod(ag.ReverseSubOne(m.TimeMixK), xx))
+	xv = add(prod(m.TimeMixV, x), prod(ag.ReverseSubOne(m.TimeMixV), xx))
+	xr = add(prod(m.TimeMixR, x), prod(ag.ReverseSubOne(m.TimeMixR), xx))
+	return
+}
+
+func (m *TimeMix) computeKeyValuesReceptance(xk, xv, xr []ag.Node) (k, v, r []ag.Node) {
+	k = mul(m.Key, xk)
+	v = mul(m.Value, xv)
+	r = sigmoid(mul(m.Receptance, xr))
+	return
+}
+
+func (m *TimeMix) updateAttentionScores(aa, bb, pp ag.Node, k, v []ag.Node) (wkv []ag.Node, newAA, newBB, newPP ag.Node) {
+	wkv = make([]ag.Node, len(k))
+	newAA, newBB, newPP = aa, bb, pp
+	for i := 0; i < len(k); i++ {
+		wkv[i], newAA, newBB, newPP = m.singleStepAttention(newAA, newBB, newPP, k[i], v[i])
+	}
+	return
+}
+
+func (m *TimeMix) singleStepAttention(aa, bb, pp, ki, vi ag.Node) (wkv, newAA, newBB, newPP ag.Node) {
+	calcExp := func(x, y ag.Node) (ag.Node, ag.Node) {
+		p := ag.Max(x, y)
+		return ag.Exp(ag.Sub(x, p)), ag.Exp(ag.Sub(y, p))
 	}
 
-	rwkv := prod2(r, wkv)
-	out := mul(m.Output, rwkv)
+	ww := ag.Add(ki, m.TimeFirst)
+	e1, e2 := calcExp(pp, ww)
+	a := ag.Add(ag.Prod(e1, aa), ag.Prod(e2, vi))
+	b := ag.Add(ag.Prod(e1, bb), e2)
+	wkv = ag.Div(a, b)
 
+	ww = ag.Add(pp, m.TimeDecay)
+	e1, e2 = calcExp(ww, ki)
+	newAA = ag.Add(ag.Prod(e1, aa), ag.Prod(e2, vi))
+	newBB = ag.Add(ag.Prod(e1, bb), e2)
+	newPP = ag.Max(ww, ki)
+
+	return
+}
+
+func updateState(state *LayerState, x []ag.Node, aa, bb, pp ag.Node) {
 	state.AttXX = x[len(x)-1]
 	state.AttAA = aa
 	state.AttBB = bb
 	state.AttPP = pp
-
-	return out
 }
