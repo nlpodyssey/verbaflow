@@ -18,7 +18,7 @@ import (
 
 // OutputDiversityControlFunc performs the pre-processing steps that are used to narrow down the set of candidate items
 // before using greedy decoding or multinomial sampling to generate the final output.
-type OutputDiversityControlFunc func(logits mat.Matrix) (mat.Matrix, error)
+type OutputDiversityControlFunc func(logits mat.Tensor) (mat.Tensor, error)
 
 // OutputDiversityControl returns a function used to select the next token.
 func OutputDiversityControl(temp float64, topK int, topP float64) (OutputDiversityControlFunc, error) {
@@ -50,7 +50,7 @@ func OutputDiversityControl(temp float64, topK int, topP float64) (OutputDiversi
 		result = append(result, TopPFunc(topP, math.Inf(-1), 1)) // minSize = 2 if beam search is enabled
 	}
 
-	return func(logits mat.Matrix) (mat.Matrix, error) {
+	return func(logits mat.Tensor) (mat.Tensor, error) {
 		var err error
 		for _, p := range result {
 			logits, err = p(logits)
@@ -65,19 +65,19 @@ func OutputDiversityControl(temp float64, topK int, topP float64) (OutputDiversi
 // TemperatureFunc applies a temperature to a matrix of scores.
 func TemperatureFunc(temperature float64) OutputDiversityControlFunc {
 	if temperature == 1 {
-		return func(scores mat.Matrix) (mat.Matrix, error) {
+		return func(scores mat.Tensor) (mat.Tensor, error) {
 			return scores, nil
 		}
 	}
 	invTemperature := 1 / temperature
-	return func(scores mat.Matrix) (mat.Matrix, error) {
-		return scores.ProdScalar(invTemperature), nil
+	return func(scores mat.Tensor) (mat.Tensor, error) {
+		return scores.(mat.Matrix).ProdScalar(invTemperature), nil
 	}
 }
 
 // TopKFunc applies a top-k filter to a matrix of scores.
 func TopKFunc(topK int, filterValue float64) OutputDiversityControlFunc {
-	return func(scores mat.Matrix) (mat.Matrix, error) {
+	return func(scores mat.Tensor) (mat.Tensor, error) {
 		topK := topK
 		if size := scores.Size(); size <= topK {
 			topK = size
@@ -95,7 +95,7 @@ func TopKFunc(topK int, filterValue float64) OutputDiversityControlFunc {
 		}
 		minScore := heap.Pop(topScores).(float64)
 
-		return scores.Apply(func(_, _ int, v float64) float64 {
+		return scores.(mat.Matrix).Apply(func(_, _ int, v float64) float64 {
 			if v < minScore {
 				return filterValue
 			}
@@ -107,13 +107,13 @@ func TopKFunc(topK int, filterValue float64) OutputDiversityControlFunc {
 // TopPFunc applies a top-p filter to a matrix of scores.
 // Note that when using beam decoding (with beam > 1) then minSize must be at least 2.
 func TopPFunc[T float.DType](topP, filterValue T, minSize int) OutputDiversityControlFunc {
-	return func(scores mat.Matrix) (mat.Matrix, error) {
+	return func(scores mat.Tensor) (mat.Tensor, error) {
 		dataCopy := make([]T, scores.Size())
 		copy(dataCopy, mat.Data[T](scores))
 		sortedData := sliceutils.NewIndexedSlice[T](dataCopy)
 		sort.Stable(sort.Reverse(sortedData))
 
-		cumulativeProbs := mat.NewVecDense(sortedData.Slice).Softmax().CumSum()
+		cumulativeProbs := mat.NewDense[T](mat.WithBacking(sortedData.Slice)).Softmax().CumSum()
 		cumProbData := mat.Data[T](cumulativeProbs)
 
 		indicesToRemove := make([]bool, len(cumProbData))
@@ -144,7 +144,7 @@ func TopPFunc[T float.DType](topP, filterValue T, minSize int) OutputDiversityCo
 			outData[index] = filterValue
 		}
 
-		return mat.NewVecDense[T](outData), nil
+		return mat.NewDense[T](mat.WithBacking(outData)), nil
 	}
 }
 
@@ -158,7 +158,7 @@ type OccurrenceMap map[int]int
 func DiversityFunc[T float.DType](presencePenalty, countPenalty T) OutputDiversityControlFunc {
 	occurrence := make(OccurrenceMap)
 
-	return func(scores mat.Matrix) (mat.Matrix, error) {
+	return func(scores mat.Tensor) (mat.Tensor, error) {
 		dataCopy := make([]T, scores.Size())
 		copy(dataCopy, mat.Data[T](scores))
 
@@ -166,6 +166,6 @@ func DiversityFunc[T float.DType](presencePenalty, countPenalty T) OutputDiversi
 			dataCopy[token] -= presencePenalty + T(count)*countPenalty
 		}
 
-		return mat.NewVecDense[T](dataCopy), nil
+		return mat.NewDense[T](mat.WithBacking(dataCopy)), nil
 	}
 }

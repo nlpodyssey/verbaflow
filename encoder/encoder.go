@@ -6,8 +6,8 @@ package encoder
 
 import (
 	"context"
+	"github.com/nlpodyssey/spago/mat"
 
-	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/verbaflow/rwkv"
 	"github.com/nlpodyssey/verbaflow/rwkvlm"
 )
@@ -17,7 +17,7 @@ type Encoder struct {
 }
 
 type Result struct {
-	Encoding ag.Node
+	Encoding mat.Tensor
 	State    rwkv.State
 }
 

@@ -2,6 +2,10 @@ module github.com/nlpodyssey/verbaflow
 
 go 1.20
 
+replace (
+	"github.com/nlpodyssey/spago" => ../spago
+)
+
 require (
 	github.com/nlpodyssey/gopickle v0.2.0
 	github.com/nlpodyssey/gotokenizers v0.2.0

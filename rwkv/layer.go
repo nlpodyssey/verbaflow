@@ -6,7 +6,9 @@ package rwkv
 
 import (
 	"encoding/gob"
+
 	"github.com/nlpodyssey/spago/ag"
+	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/spago/nn"
 	"github.com/nlpodyssey/spago/nn/normalization/layernorm"
@@ -37,7 +39,7 @@ func NewLayer[T float.DType](c Config) *Layer {
 	}
 }
 
-func (m *Layer) ForwardSingle(x ag.Node, state *LayerState) ag.Node {
+func (m *Layer) ForwardSingle(x mat.Tensor, state *LayerState) mat.Tensor {
 	if m.LN0 != nil {
 		x = m.LN0.Forward(x)[0]
 	}
@@ -46,7 +48,7 @@ func (m *Layer) ForwardSingle(x ag.Node, state *LayerState) ag.Node {
 	return x
 }
 
-func (m *Layer) ForwardSequence(x []ag.Node, state *LayerState) []ag.Node {
+func (m *Layer) ForwardSequence(x []mat.Tensor, state *LayerState) []mat.Tensor {
 	if m.LN0 != nil {
 		x = m.LN0.Forward(x...)
 	}

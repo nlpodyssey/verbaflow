@@ -10,7 +10,6 @@ import (
 	"math"
 	"reflect"
 
-	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/spago/mat"
 	"github.com/nlpodyssey/spago/mat/float"
 	"github.com/nlpodyssey/verbaflow/encoder"
@@ -121,7 +120,7 @@ Loop:
 
 // generateToken performs a single step of the decoding process.
 // It returns the selected output token ID and its score.
-func (d *Decoder) generateToken(_ context.Context, x ag.Node, seqLen int) (int, float64, error) {
+func (d *Decoder) generateToken(_ context.Context, x mat.Tensor, seqLen int) (int, float64, error) {
 	logits := d.model.Predict(x)
 	candidates, err := d.applyOutputControl(d.adjustLogits(logits.Value(), seqLen))
 	if err != nil {
@@ -131,12 +130,12 @@ func (d *Decoder) generateToken(_ context.Context, x ag.Node, seqLen int) (int, 
 }
 
 // adjustLogits checks if the sequence is too short and if so, set the logits of the end token to a very low value.
-func (d *Decoder) adjustLogits(logits mat.Matrix, sequenceLength int) mat.Matrix {
+func (d *Decoder) adjustLogits(logits mat.Tensor, sequenceLength int) mat.Tensor {
 	if sequenceLength >= d.opts.MinLen {
 		return logits
 	}
 	log.Trace().Msgf("Sequence too short (%d), setting end token (%d) logits to -inf", sequenceLength, d.opts.EndTokenID)
-	logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
+	//logits.SetVecScalar(d.opts.EndTokenID, floatNegInf)
 	return logits
 }
 
@@ -170,7 +169,7 @@ func hasStopSequence(sequence []int, stopSequences [][]int) bool {
 	return false
 }
 
-func (d *Decoder) encode(ctx context.Context, tokenID int, state rwkv.State) (ag.Node, error) {
+func (d *Decoder) encode(ctx context.Context, tokenID int, state rwkv.State) (mat.Tensor, error) {
 	x, _ := d.model.Encode(ctx, state, tokenID)
 	return x, nil
 }

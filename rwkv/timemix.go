@@ -37,20 +37,20 @@ func init() {
 func NewTimeMix[T float.DType](c Config) *TimeMix {
 	return &TimeMix{
 		Config:     c,
-		Key:        nn.NewParam(mat.NewEmptyDense[T](c.DModel, c.DModel)),
-		Value:      nn.NewParam(mat.NewEmptyDense[T](c.DModel, c.DModel)),
-		Receptance: nn.NewParam(mat.NewEmptyDense[T](c.DModel, c.DModel)),
-		Output:     nn.NewParam(mat.NewEmptyDense[T](c.DModel, c.DModel)),
-		TimeDecay:  nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
-		TimeFirst:  nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
-		TimeMixK:   nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
-		TimeMixV:   nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
-		TimeMixR:   nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
+		Key:        nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, c.DModel))),
+		Value:      nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, c.DModel))),
+		Receptance: nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, c.DModel))),
+		Output:     nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, c.DModel))),
+		TimeDecay:  nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
+		TimeFirst:  nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
+		TimeMixK:   nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
+		TimeMixV:   nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
+		TimeMixR:   nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
 	}
 }
 
 // ForwardSingle performs the forward step for a single input.
-func (m *TimeMix) ForwardSingle(x ag.Node, state *LayerState) ag.Node {
+func (m *TimeMix) ForwardSingle(x mat.Tensor, state *LayerState) mat.Tensor {
 	xx, aa, bb, pp := state.AttXX, state.AttAA, state.AttBB, state.AttPP
 
 	// Step 1: mix with previous time step.
@@ -86,8 +86,8 @@ func (m *TimeMix) ForwardSingle(x ag.Node, state *LayerState) ag.Node {
 	return out
 }
 
-func (m *TimeMix) ForwardSequence(x []ag.Node, state *LayerState) []ag.Node {
-	xx := append([]ag.Node{state.AttXX}, x[:len(x)-1]...)
+func (m *TimeMix) ForwardSequence(x []mat.Tensor, state *LayerState) []mat.Tensor {
+	xx := append([]mat.Tensor{state.AttXX}, x[:len(x)-1]...)
 
 	xk, xv, xr := m.computeIntermediateValues(x, xx)
 	k, v, r := m.computeKeyValuesReceptance(xk, xv, xr)
@@ -101,22 +101,22 @@ func (m *TimeMix) ForwardSequence(x []ag.Node, state *LayerState) []ag.Node {
 	return out
 }
 
-func (m *TimeMix) computeIntermediateValues(x, xx []ag.Node) (xk, xv, xr []ag.Node) {
+func (m *TimeMix) computeIntermediateValues(x, xx []mat.Tensor) (xk, xv, xr []mat.Tensor) {
 	xk = add(prod(m.TimeMixK, x), prod(ag.ReverseSubOne(m.TimeMixK), xx))
 	xv = add(prod(m.TimeMixV, x), prod(ag.ReverseSubOne(m.TimeMixV), xx))
 	xr = add(prod(m.TimeMixR, x), prod(ag.ReverseSubOne(m.TimeMixR), xx))
 	return
 }
 
-func (m *TimeMix) computeKeyValuesReceptance(xk, xv, xr []ag.Node) (k, v, r []ag.Node) {
+func (m *TimeMix) computeKeyValuesReceptance(xk, xv, xr []mat.Tensor) (k, v, r []mat.Tensor) {
 	k = mul(m.Key, xk)
 	v = mul(m.Value, xv)
 	r = sigmoid(mul(m.Receptance, xr))
 	return
 }
 
-func (m *TimeMix) updateAttentionScores(aa, bb, pp ag.Node, k, v []ag.Node) (wkv []ag.Node, newAA, newBB, newPP ag.Node) {
-	wkv = make([]ag.Node, len(k))
+func (m *TimeMix) updateAttentionScores(aa, bb, pp mat.Tensor, k, v []mat.Tensor) (wkv []mat.Tensor, newAA, newBB, newPP mat.Tensor) {
+	wkv = make([]mat.Tensor, len(k))
 	newAA, newBB, newPP = aa, bb, pp
 	for i := 0; i < len(k); i++ {
 		wkv[i], newAA, newBB, newPP = m.singleStepAttention(newAA, newBB, newPP, k[i], v[i])
@@ -124,8 +124,8 @@ func (m *TimeMix) updateAttentionScores(aa, bb, pp ag.Node, k, v []ag.Node) (wkv
 	return
 }
 
-func (m *TimeMix) singleStepAttention(aa, bb, pp, ki, vi ag.Node) (wkv, newAA, newBB, newPP ag.Node) {
-	calcExp := func(x, y ag.Node) (ag.Node, ag.Node) {
+func (m *TimeMix) singleStepAttention(aa, bb, pp, ki, vi mat.Tensor) (wkv, newAA, newBB, newPP mat.Tensor) {
+	calcExp := func(x, y mat.Tensor) (mat.Tensor, mat.Tensor) {
 		p := ag.Max(x, y)
 		return ag.Exp(ag.Sub(x, p)), ag.Exp(ag.Sub(y, p))
 	}
@@ -145,7 +145,7 @@ func (m *TimeMix) singleStepAttention(aa, bb, pp, ki, vi ag.Node) (wkv, newAA, n
 	return
 }
 
-func updateState(state *LayerState, x []ag.Node, aa, bb, pp ag.Node) {
+func updateState(state *LayerState, x []mat.Tensor, aa, bb, pp mat.Tensor) {
 	state.AttXX = x[len(x)-1]
 	state.AttAA = aa
 	state.AttBB = bb

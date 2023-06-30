@@ -32,16 +32,16 @@ func init() {
 func NewChannelMix[T float.DType](c Config) *ChannelMix {
 	hidden := 4 * c.DModel
 	return &ChannelMix{
-		Key:        nn.NewParam(mat.NewEmptyDense[T](hidden, c.DModel)),
-		Value:      nn.NewParam(mat.NewEmptyDense[T](c.DModel, hidden)),
-		Receptance: nn.NewParam(mat.NewEmptyDense[T](c.DModel, c.DModel)),
-		TimeMixK:   nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
-		TimeMixR:   nn.NewParam(mat.NewEmptyVecDense[T](c.DModel)),
+		Key:        nn.NewParam(mat.NewDense[T](mat.WithShape(hidden, c.DModel))),
+		Value:      nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, hidden))),
+		Receptance: nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel, c.DModel))),
+		TimeMixK:   nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
+		TimeMixR:   nn.NewParam(mat.NewDense[T](mat.WithShape(c.DModel))),
 	}
 }
 
 // ForwardSingle performs the forward step for a single node.
-func (m *ChannelMix) ForwardSingle(x ag.Node, state *LayerState) (rkv ag.Node) {
+func (m *ChannelMix) ForwardSingle(x mat.Tensor, state *LayerState) (rkv mat.Tensor) {
 	xx := state.FfnXX
 
 	xk := ag.Add(ag.Prod(x, m.TimeMixK), ag.Prod(ag.ReverseSubOne(m.TimeMixK), xx))
@@ -59,8 +59,8 @@ func (m *ChannelMix) ForwardSingle(x ag.Node, state *LayerState) (rkv ag.Node) {
 
 // ForwardSequence performs the forward step for a sequence of nodes.
 // The state is updated with the last node of the sequence.
-func (m *ChannelMix) ForwardSequence(x []ag.Node, state *LayerState) (rkv []ag.Node) {
-	xx := append([]ag.Node{state.FfnXX}, x[:len(x)-1]...) // token shift
+func (m *ChannelMix) ForwardSequence(x []mat.Tensor, state *LayerState) (rkv []mat.Tensor) {
+	xx := append([]mat.Tensor{state.FfnXX}, x[:len(x)-1]...) // token shift
 
 	xk := add(prod(m.TimeMixK, x), prod(ag.ReverseSubOne(m.TimeMixK), xx))
 	xr := add(prod(m.TimeMixR, x), prod(ag.ReverseSubOne(m.TimeMixR), xx))

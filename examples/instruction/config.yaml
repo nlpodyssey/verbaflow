@@ -1,0 +1,22 @@
+# min_len is the minimum number of tokens to generate.
+min_len: 0
+# max_len is the maximum number of tokens to generate.
+max_len: 200
+# end_token_id is the end-of-sequence token.
+end_token_id: 0
+# skip_end_token_id when true, the end token is not added to the generated sequence.
+skip_end_token_id: true
+# temp is the temperature used to control the randomness of the generated text.
+temp: 1.0
+# top_p is the cumulative probability of the tokens to consider when sampling the next token.
+top_p: 0.0
+#
+presence_penalty: 0.4
+#
+count_penalty: 0.4
+# top_k is the number of tokens to consider when sampling the next token.
+top_k: 0
+# use_sampling uses sampling to generate the next token.
+use_sampling: false
+# stop_sequences_ids is a list of token ids that if generated, the generation process will stop.
+stop_sequences_ids:

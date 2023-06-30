@@ -166,11 +166,11 @@ func (c *converter[T]) convLinear() error {
 		return fmt.Errorf("failed to convert head-weight/linear: %w", err)
 	}
 
-	if vs := c.model.Config.VocabSize; m.Rows() != vs {
-		return fmt.Errorf("expected head-weight/linear rows to match vocabulary size %d, actual %d", vs, m.Rows())
+	if vs := c.model.Config.VocabSize; m.Shape()[0] != vs {
+		return fmt.Errorf("expected head-weight/linear rows to match vocabulary size %d, actual %d", vs, m.Shape()[0])
 	}
-	if dm := c.model.Config.DModel; m.Columns() != dm {
-		return fmt.Errorf("expected head-weight/linear columns to match DModel %d, actual %d", dm, m.Columns())
+	if dm := c.model.Config.DModel; m.Shape()[1] != dm {
+		return fmt.Errorf("expected head-weight/linear columns to match DModel %d, actual %d", dm, m.Shape()[1])
 	}
 
 	c.model.Linear = nn.NewParam(m)
@@ -371,7 +371,7 @@ func (c *converter[T]) convLayerNorm(name string, params paramsMap) (*layernorm.
 	return &layernorm.Model{
 		W:   nn.NewParam(w),
 		B:   nn.NewParam(b),
-		Eps: nn.Const[T](DefaultLayerNormEps),
+		Eps: nn.Buf[T](mat.Scalar(DefaultLayerNormEps)),
 	}, nil
 }
 
@@ -387,7 +387,7 @@ func (c *converter[T]) loadTorchModelParams() error {
 	return nil
 }
 
-func (c *converter[T]) tensorToVectors(t *pytorch.Tensor) ([]mat.Matrix, error) {
+func (c *converter[T]) tensorToVectors(t *pytorch.Tensor) ([]mat.Tensor, error) {
 	if len(t.Size) != 2 {
 		return nil, fmt.Errorf("expected 2 dimensions, actual %d", len(t.Size))
 	}
@@ -400,16 +400,16 @@ func (c *converter[T]) tensorToVectors(t *pytorch.Tensor) ([]mat.Matrix, error) 
 	rows := t.Size[0]
 	cols := t.Size[1]
 
-	vecs := make([]mat.Matrix, rows)
+	vecs := make([]mat.Tensor, rows)
 	for i := range vecs {
 		d := data[i*cols : (i*cols)+cols]
-		vecs[i] = mat.NewVecDense[T](c.castMatrixData(d))
+		vecs[i] = mat.NewDense[T](mat.WithBacking(c.castMatrixData(d)))
 	}
 
 	return vecs, nil
 }
 
-func (c *converter[T]) tensorToMatrix(t *pytorch.Tensor) (mat.Matrix, error) {
+func (c *converter[T]) tensorToMatrix(t *pytorch.Tensor) (mat.Tensor, error) {
 	if len(t.Size) != 2 {
 		return nil, fmt.Errorf("expected 2 dimensions, actual %d", len(t.Size))
 	}
@@ -419,10 +419,10 @@ func (c *converter[T]) tensorToMatrix(t *pytorch.Tensor) (mat.Matrix, error) {
 		return nil, err
 	}
 
-	return mat.NewDense[T](t.Size[0], t.Size[1], c.castMatrixData(data)), nil
+	return mat.NewDense[T](mat.WithShape(t.Size[0], t.Size[1]), mat.WithBacking(c.castMatrixData(data))), nil
 }
 
-func (c *converter[T]) tensorToVector(t *pytorch.Tensor) (mat.Matrix, error) {
+func (c *converter[T]) tensorToVector(t *pytorch.Tensor) (mat.Tensor, error) {
 	if len(t.Size) != 1 {
 		return nil, fmt.Errorf("expected 1 dimension, actual %d", len(t.Size))
 	}
@@ -432,19 +432,19 @@ func (c *converter[T]) tensorToVector(t *pytorch.Tensor) (mat.Matrix, error) {
 		return nil, err
 	}
 
-	return mat.NewVecDense[T](c.castMatrixData(data)), nil
+	return mat.NewDense[T](mat.WithBacking(c.castMatrixData(data))), nil
 }
 
-func (c *converter[T]) tensorToSqueezedVector(t *pytorch.Tensor) (mat.Matrix, error) {
+func (c *converter[T]) tensorToSqueezedVector(t *pytorch.Tensor) (mat.Tensor, error) {
 	data, err := c.tensorData(t)
 	if err != nil {
 		return nil, err
 	}
-	return mat.NewVecDense[T](c.castMatrixData(data)), nil
+	return mat.NewDense[T](mat.WithBacking(c.castMatrixData(data))), nil
 }
 
 func (c *converter[T]) castMatrixData(d []float32) []T {
-	return float.SliceValueOf[T](float.SliceInterface(d))
+	return float.SliceValueOf[T](float.Make(d...))
 }
 
 func (c *converter[T]) tensorData(t *pytorch.Tensor) ([]float32, error) {
@@ -456,7 +456,7 @@ func (c *converter[T]) tensorData(t *pytorch.Tensor) ([]float32, error) {
 	return st.Data[t.StorageOffset : t.StorageOffset+size], nil
 }
 
-func (c *converter[T]) fetchParamToVector(params paramsMap, name string, expectedSize int) (mat.Matrix, error) {
+func (c *converter[T]) fetchParamToVector(params paramsMap, name string, expectedSize int) (mat.Tensor, error) {
 	t, err := params.fetch(name)
 	if err != nil {
 		return nil, err
@@ -471,7 +471,7 @@ func (c *converter[T]) fetchParamToVector(params paramsMap, name string, expecte
 	return v, nil
 }
 
-func (c *converter[T]) fetchParamToSqueezedVector(params paramsMap, name string, expectedSize int) (mat.Matrix, error) {
+func (c *converter[T]) fetchParamToSqueezedVector(params paramsMap, name string, expectedSize int) (mat.Tensor, error) {
 	t, err := params.fetch(name)
 	if err != nil {
 		return nil, err
@@ -486,7 +486,7 @@ func (c *converter[T]) fetchParamToSqueezedVector(params paramsMap, name string,
 	return v, nil
 }
 
-func (c *converter[T]) fetchParamToMatrix(params paramsMap, name string, expectedSize [2]int) (mat.Matrix, error) {
+func (c *converter[T]) fetchParamToMatrix(params paramsMap, name string, expectedSize [2]int) (mat.Tensor, error) {
 	t, err := params.fetch(name)
 	if err != nil {
 		return nil, err
@@ -495,9 +495,9 @@ func (c *converter[T]) fetchParamToMatrix(params paramsMap, name string, expecte
 	if err != nil {
 		return nil, err
 	}
-	if m.Rows() != expectedSize[0] || m.Columns() != expectedSize[1] {
+	if m.Shape()[0] != expectedSize[0] || m.Shape()[1] != expectedSize[1] {
 		return nil, fmt.Errorf("expected matrix size %dx%d, actual %dx%d",
-			expectedSize[0], expectedSize[1], m.Rows(), m.Columns())
+			expectedSize[0], expectedSize[1], m.Shape()[0], m.Shape()[1])
 	}
 	return m, nil
 }

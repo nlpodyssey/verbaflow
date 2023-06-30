@@ -79,7 +79,7 @@ func New[T float.DType](c Config) *Model {
 			RescaleLayer: c.RescaleLayer,
 		}),
 		LN:         layernorm.New[T](c.DModel, 1e-6),
-		Linear:     nn.NewParam(mat.NewEmptyDense[T](c.VocabSize, c.DModel)),
+		Linear:     nn.NewParam(mat.NewDense[T](mat.WithShape(c.VocabSize, c.DModel))),
 		Embeddings: embedding.New[T](c.VocabSize, c.DModel),
 	}
 }
@@ -112,7 +112,7 @@ func Dump(obj *Model, filename string) error {
 }
 
 // Encode performs EncodeTokens and EncodeEmbeddings.
-func (m *Model) Encode(ctx context.Context, s rwkv.State, tokens ...int) (ag.Node, rwkv.State) {
+func (m *Model) Encode(ctx context.Context, s rwkv.State, tokens ...int) (mat.Tensor, rwkv.State) {
 	encoded, err := m.Embeddings.Encode(tokens)
 	if err != nil {
 		log.Fatal().Msgf("failed to encode tokens: %w", err)
@@ -121,7 +121,7 @@ func (m *Model) Encode(ctx context.Context, s rwkv.State, tokens ...int) (ag.Nod
 }
 
 // EncodeTokens returns the embeddings of the given tokens.
-func (m *Model) EncodeTokens(_ context.Context, tokens ...int) []ag.Node {
+func (m *Model) EncodeTokens(_ context.Context, tokens ...int) []mat.Tensor {
 	encoded, err := m.Embeddings.Encode(tokens)
 	if err != nil {
 		log.Fatal().Msgf("failed to encode tokens: %w", err)
@@ -132,18 +132,18 @@ func (m *Model) EncodeTokens(_ context.Context, tokens ...int) []ag.Node {
 // EncodeEmbeddings returns the encoding of the given input considering the last state.
 // At least one token is required, otherwise can panic.
 // If the input is a sequence, the last state is returned.
-func (m *Model) EncodeEmbeddings(_ context.Context, s rwkv.State, xs []ag.Node) (ag.Node, rwkv.State) {
+func (m *Model) EncodeEmbeddings(_ context.Context, s rwkv.State, xs []mat.Tensor) (mat.Tensor, rwkv.State) {
 	if len(xs) == 1 {
 		return m.Encoder.ForwardSingle(xs[0], s)
 	}
 
 	log.Trace().Msgf("Encoding sequence of %d tokens...", len(xs))
-	var h []ag.Node
+	var h []mat.Tensor
 	h, s = m.Encoder.ForwardSequence(xs, s)
 	return h[len(h)-1], s
 }
 
 // Predict returns the prediction logits of the next token.
-func (m *Model) Predict(x ag.Node) ag.Node {
+func (m *Model) Predict(x mat.Tensor) mat.Tensor {
 	return ag.Mul(m.Linear, m.LN.Forward(x)[0])
 }

@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-type OutputSelectionFunc func(logits mat.Matrix) (int, float64, error)
+type OutputSelectionFunc func(logits mat.Tensor) (int, float64, error)
 
 func OutputSelection(sampling bool) OutputSelectionFunc {
 	if sampling {
@@ -24,26 +24,26 @@ func OutputSelection(sampling bool) OutputSelectionFunc {
 }
 
 func GreedyDecoding() OutputSelectionFunc {
-	return func(logits mat.Matrix) (int, float64, error) {
-		probs := logits.Softmax()
+	return func(logits mat.Tensor) (int, float64, error) {
+		probs := logits.(mat.Matrix).Softmax()
 		argmax := probs.ArgMax()
-		return argmax, probs.ScalarAtVec(argmax).F64(), nil
+		return argmax, probs.ScalarAt(argmax).F64(), nil
 	}
 }
 
 func MultinomialSampling() OutputSelectionFunc {
-	return func(logits mat.Matrix) (int, float64, error) {
-		probs := logits.Softmax()
+	return func(logits mat.Tensor) (int, float64, error) {
+		probs := logits.(mat.Matrix).Softmax()
 		samples, err := multinomial(probs, 1)
 		if err != nil {
 			return 0, 0, err
 		}
-		return samples[0], probs.ScalarAtVec(samples[0]).F64(), nil
+		return samples[0], probs.ScalarAt(samples[0]).F64(), nil
 	}
 }
 
 // multinomial extracts the next indices from a multinomial probability distribution.
-func multinomial(input mat.Matrix, numSamples int) ([]int, error) {
+func multinomial(input mat.Tensor, numSamples int) ([]int, error) {
 	if numSamples > input.Size() {
 		return nil, fmt.Errorf("numSamples (%d) must be less than or equal to the size of the input (%d)", numSamples, input.Size())
 	}

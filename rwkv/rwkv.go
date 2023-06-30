@@ -40,7 +40,7 @@ func New[T float.DType](c Config) *Model {
 }
 
 // ForwardSingle performs the forward step for a single element of the sequence.
-func (m *Model) ForwardSingle(x ag.Node, state State) (ag.Node, State) {
+func (m *Model) ForwardSingle(x mat.Tensor, state State) (mat.Tensor, State) {
 	if len(state) == 0 {
 		state = NewState(m.Config)
 	}
@@ -57,14 +57,14 @@ func (m *Model) ForwardSingle(x ag.Node, state State) (ag.Node, State) {
 // ForwardSequence performs the forward step for the entire sequence, just a bit more optimized.
 // It is equivalent to calling ForwardSingle for each element of the sequence, for example:
 //
-//	var x ag.Node
+//	var x mat.Tensor
 //	for _, e := range encoded {
 //		x, s = m.ForwardSingle(e, s)
 //	}
 //	return x, s
 //
 // It returns the last computed state.
-func (m *Model) ForwardSequence(x []ag.Node, state State) ([]ag.Node, State) {
+func (m *Model) ForwardSequence(x []mat.Tensor, state State) ([]mat.Tensor, State) {
 	if len(state) == 0 {
 		state = NewState(m.Config)
 	}

@@ -5,29 +5,28 @@
 package rwkv
 
 import (
-	"github.com/nlpodyssey/spago/ag"
 	"github.com/nlpodyssey/spago/mat"
 )
 
 type State []*LayerState
 
 type LayerState struct {
-	FfnXX ag.Node
-	AttXX ag.Node
-	AttAA ag.Node
-	AttBB ag.Node
-	AttPP ag.Node
+	FfnXX mat.Tensor
+	AttXX mat.Tensor
+	AttAA mat.Tensor
+	AttBB mat.Tensor
+	AttPP mat.Tensor
 }
 
 func NewState(c Config) State {
 	state := make(State, c.NumLayers)
 	for i := 0; i < c.NumLayers; i++ {
 		state[i] = &LayerState{
-			FfnXX: mat.NewEmptyVecDense[float32](c.DModel),
-			AttXX: mat.NewEmptyVecDense[float32](c.DModel),
-			AttAA: mat.NewEmptyVecDense[float32](c.DModel),
-			AttBB: mat.NewEmptyVecDense[float32](c.DModel),
-			AttPP: mat.NewInitVecDense[float32](c.DModel, -1e30),
+			FfnXX: mat.NewDense[float32](mat.WithShape(c.DModel)),
+			AttXX: mat.NewDense[float32](mat.WithShape(c.DModel)),
+			AttAA: mat.NewDense[float32](mat.WithShape(c.DModel)),
+			AttBB: mat.NewDense[float32](mat.WithShape(c.DModel)),
+			AttPP: mat.NewDense[float32](mat.WithShape(c.DModel), mat.WithBacking(mat.CreateInitializedSlice[float32](c.DModel, -1e30))),
 		}
 	}
 	return state
